@@ -1,0 +1,35 @@
+{
+  "name": "zeddal",
+  "version": "0.1.0",
+  "description": "Speak your mind. Voice notes → Whisper transcription → GPT-4 refinement → seamless vault integration.",
+  "main": "main.js",
+  "scripts": {
+    "dev": "rollup --config rollup.config.js -w",
+    "build": "rollup --config rollup.config.js --environment BUILD:production"
+  },
+  "keywords": [
+    "obsidian",
+    "plugin",
+    "voice",
+    "whisper",
+    "transcription",
+    "ai"
+  ],
+  "author": "Zeddal Team",
+  "license": "MIT",
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "^25.0.7",
+    "@rollup/plugin-json": "^6.1.0",
+    "@rollup/plugin-node-resolve": "^15.2.3",
+    "@rollup/plugin-typescript": "^11.1.6",
+    "@types/node": "^20.11.5",
+    "obsidian": "^1.4.16",
+    "rollup": "^4.9.6",
+    "tslib": "^2.6.2",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.21.1",
+    "openai": "^4.26.0"
+  }
+}

@@ -1,0 +1,206 @@
+{
+  "main": {
+    "id": "6065d5b4b5069541",
+    "type": "split",
+    "children": [
+      {
+        "id": "3d1ecf13bd1dbd56",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "ee7ff65189f2d08b",
+            "type": "leaf",
+            "state": {
+              "type": "empty",
+              "state": {},
+              "icon": "lucide-file",
+              "title": "New tab"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "996a3fdcdff51ee5",
+    "type": "split",
+    "children": [
+      {
+        "id": "21ebed54120f16b0",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "79075168be05b248",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Files"
+            }
+          },
+          {
+            "id": "dfc1bf3bf7d90b53",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Search"
+            }
+          },
+          {
+            "id": "5d1632e8995c098a",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Bookmarks"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "5d03991bb1cafb45",
+    "type": "split",
+    "children": [
+      {
+        "id": "0b7d1e96a1797f42",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "03f0753f7968b9f4",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Backlinks"
+            }
+          },
+          {
+            "id": "156d66528c585667",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Outgoing links"
+            }
+          },
+          {
+            "id": "1c7789244923cd2e",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Tags"
+            }
+          },
+          {
+            "id": "318720dcefdf63c4",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "create a link.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Outline of create a link"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "zeddal:Zeddal: Record voice note": false,
+      "switcher:Open quick switcher": false,
+      "graph:Open graph view": false,
+      "canvas:Create new canvas": false,
+      "daily-notes:Open today's daily note": false,
+      "templates:Insert template": false,
+      "command-palette:Open command palette": false,
+      "bases:Create new base": false
+    }
+  },
+  "active": "ee7ff65189f2d08b",
+  "lastOpenFiles": [
+    "Zeddal Vault/Zeddal Project Brief- Features and Overview.md",
+    "Zeddal Vault/RAW - All right. - 11-12-2025, 8-39-38 AM.md",
+    "Tesla/2022 Tesla Model S Plaid Trade-In Value.md",
+    "Tesla/RAW - The current national trade-in value for a 2022 Model S plaid - 11-11-2025, 9-52-12 AM.md",
+    "Zeddal Vault/Zeddal now includes Model Context Protocol.md",
+    "Zeddal Vault/RAW - I just added a [[Zeddal]] feature for a complete model conte - 11-10-2025, 3-14-26 PM.md",
+    "Zeddal Vault/RAW - New features implemented as of today, 10th of Monday, the 10 - 11-10-2025, 1-34-56 PM.md",
+    "Voice Notes/Recordings/recording-2025-11-10-08-44-39.webm",
+    "Zeddal Vault/New Interface Demonstration for Charizard- Overview.md",
+    "Zeddal Vault/RAW - This is a test to show Charizard my new interface. - 11-10-2025, 1-33-17 PM.md",
+    "Zeddal Vault/Zeddal App Update- New Status Bar Features.md",
+    "Zeddal Vault/RAW - The newest addition that I've added to the [[Zeddal]] app is - 11-10-2025, 11-20-53 AM.md",
+    "Zeddal Vault/RAW - Newest Edition is a status bar that is added to the bottom o - 11-10-2025, 11-20-27 AM.md",
+    "Zeddal Vault/RAW - New features implemented as of today, 10th of Monday, the 10 - 11-10-2025, 10-27-08 AM.md",
+    "Zeddal Vault/RAW - [[Zeddal]]'s retrieval-augmented generation feature makes yo - 11-9-2025, 7-14-30 PM.md",
+    "Zeddal Vault/RAW - This is a test of the audio saving improvements. - 11-10-2025, 9-53-27 AM.md",
+    "Zeddal Vault/RAW - This is a test of the audio saving improvements. - 11-10-2025, 9-53-24 AM.md",
+    "Voice Notes/Recordings/recording-2025-11-10-09-53-22.metadata.json",
+    "Voice Notes/Recordings/recording-2025-11-10-09-53-22.webm",
+    "Zeddal Vault/New Command Palette Entries for Zeddal.md",
+    "Zeddal Vault/RAW - New command palette entries for [[Zeddal]] has been added. - 11-10-2025, 9-51-58 AM.md",
+    "Voice Notes/Recordings/recording-2025-11-10-09-51-56.metadata.json",
+    "Voice Notes/Recordings/recording-2025-11-10-09-51-56.webm",
+    "Zeddal Vault/RAW - This is a test of the [[Zeddal]] Recording Audio feature wit - 11-10-2025, 9-41-11 AM.md",
+    "Voice Notes/Recordings/recording-2025-11-10-09-41-10.metadata.json",
+    "Voice Notes/Recordings/recording-2025-11-10-09-41-10.webm",
+    "Zeddal Vault/Enhanced Note Sorting Feature Update Overview.md",
+    "Zeddal Vault/RAW - Fixed a feature where semantic similarity allowed notes to b - 11-10-2025, 8-54-41 AM.md",
+    "Voice Notes/Recordings/recording-2025-11-10-08-54-39.metadata.json",
+    "Voice Notes/Recordings/recording-2025-11-10-08-54-39.webm",
+    "Zeddal Vault/RAW - I just added a real-time transcription window for the live c - 11-9-2025, 1-16-56 PM.md",
+    "Zeddal Vault/RAW - New features implemented as of today, 10th of Monday, the 10 - 11-10-2025, 8-44-44 AM.md",
+    "Zeddal Vault/RAW - New features implemented as of today, 10th of Monday, the 10 - 11-10-2025, 8-45-04 AM.md",
+    "Zeddal Vault/RAW - The brief summary of the upgraded media control unit in the - 11-9-2025, 7-30-57 PM.md",
+    "Tesla/2022 Tesla Model S Plaid Media Control Unit Upgrade.md",
+    "Voice Notes/Recordings/recording-2025-11-10-08-44-39.metadata.json"
+  ]
+}

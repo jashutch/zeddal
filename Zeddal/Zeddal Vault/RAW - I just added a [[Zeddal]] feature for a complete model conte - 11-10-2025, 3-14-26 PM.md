@@ -1,0 +1,7 @@
+# I just added a [[Zeddal]] feature for a complete model conte
+
+I just added a [[Zeddal]] feature for a complete model context protocol architecture. So I've converted it from being just an instantiation of OpenAI's chat GPT API to using any AI model or agent using MCP. User enables MCP and settings, user adds MCP servers with configuration, MCP client service connects to servers on plug and load. During transcription refinement, RAG context retrieved from vault, MCP context retrieved from external servers, and both contexts combined and sent to GPT-4. Status shows a checkmark, refinement complete, with three RAG pulls and two MCP chunks used. The key properties here are they're non-blocking, so failures don't break existing workflows. Additive, so supplements RAG and don't replace it. Optional, disabled by default, user must opt in. Flexible support, multiple servers simultaneously, and live management to connect and disconnect without restart. Primarily for the optional, for the disabled by default, was that if we are in a air-gapped environment, you will not have to use this. You can block that from the start, or you can opt in if you prefer.
+
+> Transcription meta
+> Speaking: 493.90s
+> Recorded: 85.90s
