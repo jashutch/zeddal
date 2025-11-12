@@ -1,3 +1,7 @@
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
+
 /**
  * ReviewDashboard: Multi-tab diff viewer after transcription
  * Architecture: Tab-based UI for reviewing refined notes before commit

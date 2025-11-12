@@ -1,3 +1,7 @@
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
+
 /**
  * Test script for local embedding servers
  * Usage: node test-local-embeddings.js <url> <model>

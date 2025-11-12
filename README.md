@@ -355,7 +355,7 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for gui
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file for details
+**Business Source License 1.1** — no commercial or SaaS use without written permission. See [LICENSE](LICENSE) for parameters and the 2029-01-01 transition to Apache 2.0.
 
 ---
 

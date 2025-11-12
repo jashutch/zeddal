@@ -1,3 +1,7 @@
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
+
 /**
  * RecorderService: Audio recording with RMS-based silence detection
  * Architecture: Manages MediaRecorder, AudioContext analysis, and auto-pause on silence

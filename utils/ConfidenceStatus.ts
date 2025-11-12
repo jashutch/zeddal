@@ -1,3 +1,7 @@
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
+
 export type ConfidenceStatus = {
   label: 'Ready to share' | 'A quick skim is recommended' | 'We flagged a few uncertain words.' | 'Audio quality or unclear speech affected accuracy.';
   color: 'success' | 'info' | 'warning' | 'danger';
