@@ -1,6 +1,6 @@
 {
   "name": "zeddal",
-  "version": "0.1.0",
+  "version": "1.1.0",
   "description": "Speak your mind. Voice notes → Whisper transcription → GPT-4 refinement → seamless vault integration.",
   "main": "main.js",
   "scripts": {
@@ -16,7 +16,7 @@
     "ai"
   ],
   "author": "Zeddal Team",
-  "license": "MIT",
+  "license": "BUSL-1.1",
   "devDependencies": {
     "@rollup/plugin-commonjs": "^25.0.7",
     "@rollup/plugin-json": "^6.1.0",
