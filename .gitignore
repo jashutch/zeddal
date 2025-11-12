@@ -1,6 +1,11 @@
 # Build output
-main.js
+# Note: main.js is included for Obsidian plugin distribution
 *.js.map
+
+# Exclude all JS except main.js and test scripts
+*.js
+!main.js
+!test-local-embeddings.js
 
 # Dependencies
 node_modules/
@@ -8,6 +13,10 @@ node_modules/
 # Environment variables
 .env
 .env.local
+
+# Plugin data (contains API keys)
+data.json
+embeddings-cache.json
 
 # OS files
 .DS_Store
