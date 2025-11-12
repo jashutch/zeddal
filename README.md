@@ -56,7 +56,7 @@ Transform your voice into perfectly formatted, context-aware notes with automati
 
 ### Manual Installation (Recommended for Early Access)
 
-1. Download the latest release from [GitHub Releases](https://github.com/jasonhutchcraft/zeddal/releases)
+1. Download the latest release from [GitHub Releases](https://github.com/jashutch/zeddal/releases)
 2. Extract the files to your Obsidian vault's plugin folder:
    ```
    VaultFolder/.obsidian/plugins/zeddal/
@@ -274,7 +274,7 @@ Per [OpenAI's data policy](https://openai.com/policies/api-data-usage-policies):
 
 ```bash
 # Clone repository
-git clone https://github.com/jasonhutchcraft/zeddal.git
+git clone https://github.com/jashutch/zeddal.git
 cd zeddal
 
 # Install dependencies
@@ -325,9 +325,9 @@ zeddal/
 ## Support
 
 ### Getting Help
-- **Issues**: [GitHub Issues](https://github.com/jasonhutchcraft/zeddal/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/jasonhutchcraft/zeddal/discussions)
-- **Documentation**: [Full Docs](https://github.com/jasonhutchcraft/zeddal/wiki)
+- **Issues**: [GitHub Issues](https://github.com/jashutch/zeddal/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/jashutch/zeddal/discussions)
+- **Documentation**: [Full Docs](https://github.com/jashutch/zeddal/wiki)
 
 ### Contributing
 Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
