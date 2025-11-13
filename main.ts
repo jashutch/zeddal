@@ -28,6 +28,10 @@ import { LinkInspectorModal } from './ui/LinkInspectorModal';
 import { RecordingHistoryModal } from './ui/RecordingHistoryModal';
 import { StatusBar } from './ui/StatusBar';
 import { MCPWarningModal } from './ui/MCPWarningModal';
+import { QASessionService } from './services/QASessionService';
+import { TranscriptFormatter } from './services/TranscriptFormatter';
+import { CorrectionDatabase } from './services/CorrectionDatabase';
+import { UnifiedRefinementService } from './services/UnifiedRefinementService';
 
 export default class ZeddalPlugin extends Plugin {
   settings: ZeddalSettings;
@@ -39,6 +43,10 @@ export default class ZeddalPlugin extends Plugin {
   mcpClientService: MCPClientService; // Public for RecordModal
   vaultOps: VaultOps; // Public for RecordingHistoryModal
   contextLinkService: ContextLinkService; // Public for RecordingHistoryModal
+  qaSessionService: QASessionService; // Public for RecordModal
+  transcriptFormatter: TranscriptFormatter; // Public for RecordModal
+  correctionDb: CorrectionDatabase; // Public for RecordModal and settings
+  unifiedRefinement: UnifiedRefinementService; // Public for RecordModal
   private config: Config;
   private audioFileService: AudioFileService;
   private micButton: MicButton;
@@ -63,7 +71,16 @@ export default class ZeddalPlugin extends Plugin {
     this.vaultOps = new VaultOps(this.app);
     this.toast = new Toast();
     this.contextLinkService = new ContextLinkService(this.app);
+    this.qaSessionService = new QASessionService(this.config, this.vaultRAGService);
+    this.transcriptFormatter = new TranscriptFormatter(this.config);
     this.statusBar = new StatusBar(this.app, () => this.handleStatusBarRecordRequest());
+
+    // Initialize correction learning system
+    this.correctionDb = new CorrectionDatabase(this.app);
+    await this.correctionDb.initialize();
+
+    // Initialize unified refinement service
+    this.unifiedRefinement = new UnifiedRefinementService(this.config, this.correctionDb);
 
     // Initialize RAG index (async, don't block plugin load)
     this.initializeRAGIndex();
@@ -163,6 +180,11 @@ export default class ZeddalPlugin extends Plugin {
     // Disconnect MCP clients
     if (this.mcpClientService) {
       await this.mcpClientService.disconnect();
+    }
+
+    // Cleanup correction database
+    if (this.correctionDb) {
+      await this.correctionDb.destroy();
     }
 
     // Cleanup UI
@@ -394,6 +416,10 @@ export default class ZeddalPlugin extends Plugin {
           this.vaultRAGService,
           this.mcpClientService,
           this.audioFileService,
+          this.qaSessionService,
+          this.transcriptFormatter,
+          this.correctionDb,
+          this.unifiedRefinement,
           savedAudioFile  // Pass existing audio file
         );
         modal.open();
@@ -454,6 +480,10 @@ export default class ZeddalPlugin extends Plugin {
         this.vaultRAGService,
         this.mcpClientService,
         this.audioFileService,
+        this.qaSessionService,
+        this.transcriptFormatter,
+        this.correctionDb,
+        this.unifiedRefinement,
         savedAudioFile
       );
       modal.open();
@@ -981,6 +1011,437 @@ class ZeddalSettingTab extends PluginSettingTab {
         });
       }
     }
+
+    // Technical Content Formatting Settings
+    containerEl.createEl('h3', { text: 'Technical Content Formatting' });
+    containerEl.createEl('p', {
+      text: 'Automatically format mathematical expressions, code blocks, and scientific symbols in transcriptions using LaTeX and Markdown.',
+      cls: 'setting-item-description',
+    });
+
+    // Enable Technical Formatting
+    new Setting(containerEl)
+      .setName('Enable Technical Formatting')
+      .setDesc('Use GPT-4 to format math, code, and scientific symbols in transcriptions')
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.formatTechnicalContent).onChange(async (value) => {
+          this.plugin.settings.formatTechnicalContent = value;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    // Technical Domain
+    new Setting(containerEl)
+      .setName('Technical Domain')
+      .setDesc('Hint for formatting: auto-detect, math, code, or science')
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption('auto', 'Auto-detect')
+          .addOption('math', 'Mathematics')
+          .addOption('code', 'Programming/Code')
+          .addOption('science', 'Science/Chemistry')
+          .setValue(this.plugin.settings.technicalDomain)
+          .onChange(async (value) => {
+            this.plugin.settings.technicalDomain = value as 'auto' | 'math' | 'code' | 'science';
+            await this.plugin.saveSettings();
+          })
+      );
+
+    // Enable Inline LaTeX
+    new Setting(containerEl)
+      .setName('Inline LaTeX ($...$)')
+      .setDesc('Format math expressions as inline LaTeX, e.g., "x squared" → "$x^2$"')
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.enableInlineLaTeX).onChange(async (value) => {
+          this.plugin.settings.enableInlineLaTeX = value;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    // Enable Display LaTeX
+    new Setting(containerEl)
+      .setName('Display LaTeX ($$...$$)')
+      .setDesc('Format standalone equations as display LaTeX blocks')
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.enableDisplayLaTeX).onChange(async (value) => {
+          this.plugin.settings.enableDisplayLaTeX = value;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    // Enable Code Blocks
+    new Setting(containerEl)
+      .setName('Code Block Formatting')
+      .setDesc('Format code as Markdown code blocks with language detection')
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.enableCodeBlocks).onChange(async (value) => {
+          this.plugin.settings.enableCodeBlocks = value;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    // Example section
+    containerEl.createEl('h4', { text: 'Examples' });
+    const examplesDiv = containerEl.createDiv();
+    examplesDiv.style.padding = '12px';
+    examplesDiv.style.backgroundColor = 'var(--background-secondary)';
+    examplesDiv.style.borderRadius = '6px';
+    examplesDiv.style.fontFamily = 'var(--font-monospace)';
+    examplesDiv.style.fontSize = '0.9em';
+
+    const examples = [
+      { input: '"x squared plus y squared"', output: '"$x^2 + y^2$"' },
+      { input: '"integral from zero to pi"', output: '"$\\int_0^\\pi$"' },
+      { input: '"alpha times beta"', output: '"$\\alpha \\times \\beta$"' },
+      { input: '"function add x y returns x plus y"', output: '"`function add(x, y) { return x + y; }`"' },
+    ];
+
+    examples.forEach(ex => {
+      const line = examplesDiv.createDiv();
+      line.style.marginBottom = '4px';
+      line.innerHTML = `${ex.input} → ${ex.output}`;
+    });
+
+    // Transcript Refinement Settings
+    containerEl.createEl('h3', { text: 'Transcript Refinement' });
+    containerEl.createEl('p', {
+      text: 'Refine transcriptions with rule-based corrections, manual editing, and AI assistance',
+      cls: 'setting-item-description'
+    });
+
+    // Enable Quick Fixes
+    new Setting(containerEl)
+      .setName('Enable Quick Fixes')
+      .setDesc('Apply rule-based corrections (shell flags, path capitalization, typos)')
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.enableQuickFixes).onChange(async (value) => {
+          this.plugin.settings.enableQuickFixes = value;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    // Enable Local LLM
+    new Setting(containerEl)
+      .setName('Enable Local LLM')
+      .setDesc('Use local LLM for AI-powered refinement (Ollama, llama.cpp, etc.)')
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.enableLocalLLM).onChange(async (value) => {
+          this.plugin.settings.enableLocalLLM = value;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    // Local LLM Provider
+    new Setting(containerEl)
+      .setName('Local LLM Provider')
+      .setDesc('Choose your local LLM provider')
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption('ollama', 'Ollama')
+          .addOption('llamacpp', 'llama.cpp')
+          .addOption('lmstudio', 'LM Studio')
+          .addOption('openai-compatible', 'OpenAI-Compatible')
+          .addOption('openai', 'OpenAI (Cloud)')
+          .setValue(this.plugin.settings.localLLMProvider)
+          .onChange(async (value) => {
+            this.plugin.settings.localLLMProvider = value as any;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    // Local LLM Base URL
+    new Setting(containerEl)
+      .setName('Local LLM Base URL')
+      .setDesc('Base URL for local LLM (e.g., http://localhost:11434 for Ollama)')
+      .addText((text) =>
+        text
+          .setPlaceholder('http://localhost:11434')
+          .setValue(this.plugin.settings.localLLMBaseUrl)
+          .onChange(async (value) => {
+            this.plugin.settings.localLLMBaseUrl = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    // Local LLM Model
+    new Setting(containerEl)
+      .setName('Local LLM Model')
+      .setDesc('Model name (e.g., llama3.2, mistral, qwen2.5)')
+      .addText((text) =>
+        text
+          .setPlaceholder('llama3.2')
+          .setValue(this.plugin.settings.localLLMModel)
+          .onChange(async (value) => {
+            this.plugin.settings.localLLMModel = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    // Local LLM API Key (optional)
+    new Setting(containerEl)
+      .setName('Local LLM API Key')
+      .setDesc('Optional API key for custom endpoints (leave blank for local models)')
+      .addText((text) =>
+        text
+          .setPlaceholder('Optional')
+          .setValue(this.plugin.settings.localLLMApiKey)
+          .onChange(async (value) => {
+            this.plugin.settings.localLLMApiKey = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    // Help text
+    const helpDiv = containerEl.createDiv();
+    helpDiv.style.padding = '12px';
+    helpDiv.style.backgroundColor = 'var(--background-secondary)';
+    helpDiv.style.borderRadius = '6px';
+    helpDiv.style.marginTop = '12px';
+    helpDiv.style.fontSize = '0.9em';
+
+    helpDiv.createEl('p', {
+      text: '💡 Refinement Tiers:',
+      cls: 'setting-item-name'
+    });
+    helpDiv.createEl('p', {
+      text: '• Tier 1: Manual editing - Edit transcription directly in results window'
+    });
+    helpDiv.createEl('p', {
+      text: '• Tier 2: Quick Fixes - Rule-based corrections (free, <100ms)'
+    });
+    helpDiv.createEl('p', {
+      text: '• Tier 3: AI Refinement - Context-aware improvements with voice/text instructions'
+    });
+    helpDiv.createEl('p', {
+      text: ''
+    });
+    helpDiv.createEl('p', {
+      text: '🖥️ Recommended Local Models:',
+      cls: 'setting-item-name'
+    });
+    helpDiv.createEl('p', {
+      text: '• Ollama: llama3.2, qwen2.5, mistral'
+    });
+    helpDiv.createEl('p', {
+      text: '• LM Studio: Any GGUF model'
+    });
+    helpDiv.createEl('p', {
+      text: '• llama.cpp: Custom models'
+    });
+
+    // Correction Learning Settings
+    containerEl.createEl('h3', { text: 'Correction Learning' });
+    containerEl.createEl('p', {
+      text: 'Automatically learn from your manual corrections to improve future transcriptions. The system builds a personal correction database and applies patterns with high confidence.',
+      cls: 'setting-item-description'
+    });
+
+    // Enable Correction Learning
+    new Setting(containerEl)
+      .setName('Enable Correction Learning')
+      .setDesc('Learn from manual transcript corrections and apply patterns automatically')
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.enableCorrectionLearning).onChange(async (value) => {
+          this.plugin.settings.enableCorrectionLearning = value;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    // Show Correction Window
+    new Setting(containerEl)
+      .setName('Show Correction Window')
+      .setDesc('Display editable transcript immediately after Whisper transcription (before GPT refinement)')
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.showCorrectionWindow).onChange(async (value) => {
+          this.plugin.settings.showCorrectionWindow = value;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    // Auto-Apply Threshold
+    new Setting(containerEl)
+      .setName('Auto-Apply Threshold')
+      .setDesc('Confidence threshold for automatic corrections (0.5-1.0, default: 0.9)')
+      .addSlider((slider) =>
+        slider
+          .setLimits(0.5, 1.0, 0.05)
+          .setValue(this.plugin.settings.autoApplyThreshold)
+          .setDynamicTooltip()
+          .onChange(async (value) => {
+            this.plugin.settings.autoApplyThreshold = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    // Show Suggested Corrections
+    new Setting(containerEl)
+      .setName('Show Suggested Corrections')
+      .setDesc('Display learned correction suggestions during editing')
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.showSuggestedCorrections).onChange(async (value) => {
+          this.plugin.settings.showSuggestedCorrections = value;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    // Correction Analytics Display
+    if (this.plugin.correctionDb) {
+      const analytics = this.plugin.correctionDb.getAnalytics();
+
+      const analyticsDiv = containerEl.createDiv();
+      analyticsDiv.style.padding = '12px';
+      analyticsDiv.style.backgroundColor = 'var(--background-secondary)';
+      analyticsDiv.style.borderRadius = '6px';
+      analyticsDiv.style.marginTop = '12px';
+      analyticsDiv.style.marginBottom = '12px';
+
+      analyticsDiv.createEl('h4', { text: '📊 Learning Statistics' });
+
+      const statsGrid = analyticsDiv.createDiv();
+      statsGrid.style.display = 'grid';
+      statsGrid.style.gridTemplateColumns = '1fr 1fr';
+      statsGrid.style.gap = '8px';
+      statsGrid.style.marginTop = '8px';
+
+      const statItem1 = statsGrid.createDiv();
+      statItem1.innerHTML = `<strong>Total Corrections:</strong> ${analytics.totalCorrections}`;
+
+      const statItem2 = statsGrid.createDiv();
+      const autoApplyPct = (analytics.autoApplyRate * 100).toFixed(0);
+      statItem2.innerHTML = `<strong>Auto-Apply Rate:</strong> ${autoApplyPct}%`;
+
+      if (analytics.topPatterns.length > 0) {
+        analyticsDiv.createEl('h5', { text: 'Top Patterns:' });
+        const patternList = analyticsDiv.createEl('ul');
+        patternList.style.marginTop = '8px';
+        patternList.style.fontSize = '0.9em';
+
+        analytics.topPatterns.slice(0, 5).forEach(item => {
+          const li = patternList.createEl('li');
+          li.innerHTML = `"${item.pattern.before}" → "${item.pattern.after}" <em>(used ${item.frequency}x)</em>`;
+        });
+      }
+    }
+
+    // Correction Database Management
+    containerEl.createEl('h4', { text: 'Database Management' });
+
+    // Export Corrections
+    new Setting(containerEl)
+      .setName('Export Corrections')
+      .setDesc('Export your correction patterns to share or backup')
+      .addButton((button) =>
+        button
+          .setButtonText('Export')
+          .onClick(async () => {
+            try {
+              const exported = this.plugin.correctionDb.exportPatterns(false);
+              const blob = new Blob([exported], { type: 'application/json' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `zeddal-corrections-${Date.now()}.json`;
+              a.click();
+              URL.revokeObjectURL(url);
+              this.plugin.toast.success('Corrections exported successfully');
+            } catch (error) {
+              console.error('Export failed:', error);
+              this.plugin.toast.error('Failed to export corrections');
+            }
+          })
+      );
+
+    // Import Corrections
+    new Setting(containerEl)
+      .setName('Import Corrections')
+      .setDesc('Import correction patterns from a JSON file')
+      .addButton((button) =>
+        button
+          .setButtonText('Import')
+          .onClick(async () => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'application/json';
+            input.onchange = async (e: Event) => {
+              const file = (e.target as HTMLInputElement).files?.[0];
+              if (!file) return;
+
+              try {
+                const text = await file.text();
+                const count = await this.plugin.correctionDb.importPatterns(text, true);
+                this.plugin.toast.success(`Imported ${count} correction pattern(s)`);
+                this.display(); // Refresh to show updated analytics
+              } catch (error) {
+                console.error('Import failed:', error);
+                this.plugin.toast.error('Failed to import corrections');
+              }
+            };
+            input.click();
+          })
+      );
+
+    // Clear All Corrections
+    new Setting(containerEl)
+      .setName('Clear All Corrections')
+      .setDesc('Delete all learned correction patterns (cannot be undone)')
+      .addButton((button) =>
+        button
+          .setButtonText('Clear All')
+          .setWarning()
+          .onClick(async () => {
+            const confirmed = confirm('Are you sure you want to delete all learned corrections? This cannot be undone.');
+            if (confirmed) {
+              await this.plugin.correctionDb.clearAll();
+              this.plugin.toast.success('All corrections cleared');
+              this.display(); // Refresh to show updated analytics
+            }
+          })
+      );
+
+    // Advanced Settings (Future Features)
+    containerEl.createEl('h4', { text: 'Advanced (Future Features)' });
+
+    // Enable Correction Sharing
+    new Setting(containerEl)
+      .setName('Enable Correction Sharing')
+      .setDesc('Allow exporting/sharing patterns with community (future feature)')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.enableCorrectionSharing)
+          .setDisabled(true)
+          .onChange(async (value) => {
+            this.plugin.settings.enableCorrectionSharing = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    // Enable Cloud Backup
+    new Setting(containerEl)
+      .setName('Enable Cloud Backup')
+      .setDesc('Sync corrections to cloud storage (future feature)')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.enableCloudBackup)
+          .setDisabled(true)
+          .onChange(async (value) => {
+            this.plugin.settings.enableCloudBackup = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    // Enable Fine-Tuning
+    new Setting(containerEl)
+      .setName('Enable Model Fine-Tuning')
+      .setDesc('Use corrections for OpenAI model fine-tuning (future feature)')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.enableFineTuning)
+          .setDisabled(true)
+          .onChange(async (value) => {
+            this.plugin.settings.enableFineTuning = value;
+            await this.plugin.saveSettings();
+          })
+      );
   }
 
   private async applyMCPSetting(value: boolean): Promise<void> {

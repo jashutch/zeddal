@@ -25,6 +25,15 @@ import { ContextLinkService } from '../services/ContextLinkService';
 import { mapConfidenceToStatus } from '../utils/ConfidenceStatus';
 import { TelemetrySnapshot } from '../services/RecordingTelemetry';
 import { StatusBar } from './StatusBar';
+import { QASessionService } from '../services/QASessionService';
+import { Speaker, QASession, QAExportOptions } from '../utils/QATypes';
+import { SpeakerLabelModal } from '../modals/SpeakerLabelModal';
+import { exportQASession } from '../utils/QAFormatters';
+import { TranscriptFormatter } from '../services/TranscriptFormatter';
+import { QuickFixService, QuickFixResult } from '../services/QuickFixService';
+import { LocalLLMService, LocalLLMProvider, RefinementInstruction } from '../services/LocalLLMService';
+import { CorrectionDatabase } from '../services/CorrectionDatabase';
+import { UnifiedRefinementService } from '../services/UnifiedRefinementService';
 
 export class RecordModal extends Modal {
   private recorderService: RecorderService;
@@ -61,6 +70,25 @@ export class RecordModal extends Modal {
   private savedAudioFile: SavedAudioFile | null = null;
   private audioPlayer: HTMLAudioElement | null = null;
 
+  // Q&A Session properties
+  private isQAMode = false;
+  private qaSessionService: QASessionService | null = null;
+  private currentAudioBlob: Blob | null = null;
+  private qaAudioFile: SavedAudioFile | null = null; // Saved audio file for Q&A sessions
+
+  // Technical formatting
+  private transcriptFormatter: TranscriptFormatter;
+
+  // Transcript refinement
+  private quickFixService: QuickFixService;
+  private localLLMService: LocalLLMService | null = null;
+  private editableTranscript: HTMLTextAreaElement | null = null;
+
+  // Correction learning
+  private correctionDb: CorrectionDatabase;
+  private unifiedRefinement: UnifiedRefinementService;
+  private rawTranscript: string = ''; // Store raw Whisper output
+
   constructor(
     app: App,
     recorderService: RecorderService,
@@ -73,6 +101,10 @@ export class RecordModal extends Modal {
     vaultRAGService: VaultRAGService,
     mcpClientService: MCPClientService,
     audioFileService: AudioFileService,
+    qaSessionService: QASessionService | null,
+    transcriptFormatter: TranscriptFormatter,
+    correctionDb: CorrectionDatabase,
+    unifiedRefinement: UnifiedRefinementService,
     savedAudioFile?: SavedAudioFile
   ) {
     super(app);
@@ -84,7 +116,25 @@ export class RecordModal extends Modal {
     this.audioFileService = audioFileService;
     this.vaultOps = vaultOps;
     this.toast = toast;
+    this.qaSessionService = qaSessionService;
+    this.transcriptFormatter = transcriptFormatter;
+    this.correctionDb = correctionDb;
+    this.unifiedRefinement = unifiedRefinement;
     this.savedAudioFile = savedAudioFile || null;
+
+    // Initialize refinement services
+    this.quickFixService = new QuickFixService();
+
+    // Initialize local LLM if enabled
+    if (this.pluginSettings().enableLocalLLM) {
+      const provider: LocalLLMProvider = {
+        type: this.pluginSettings().localLLMProvider,
+        baseUrl: this.pluginSettings().localLLMBaseUrl,
+        model: this.pluginSettings().localLLMModel,
+        apiKey: this.pluginSettings().localLLMApiKey || undefined,
+      };
+      this.localLLMService = new LocalLLMService(provider);
+    }
   }
 
   onOpen(): void {
@@ -189,6 +239,16 @@ export class RecordModal extends Modal {
    */
   private async handleTranscription(audioChunk: AudioChunk): Promise<void> {
     try {
+      // Store audio blob for potential Q&A processing
+      this.currentAudioBlob = audioChunk.blob;
+
+      // If Q&A mode is enabled, handle differently
+      if (this.isQAMode && this.qaSessionService) {
+        await this.handleQASession(audioChunk);
+        return;
+      }
+
+      // Standard transcription flow
       const fileSizeMB = (audioChunk.blob.size / (1024 * 1024)).toFixed(1);
       const durationSec = Math.floor(audioChunk.duration / 1000);
       this.statusEl.textContent = `Transcribing audio (${fileSizeMB} MB, ~${durationSec}s)...`;
@@ -201,17 +261,30 @@ export class RecordModal extends Modal {
 
       const transcription = await this.whisperService.transcribe(audioChunk);
 
+      // STORE RAW TRANSCRIPT (before any processing)
+      this.rawTranscript = transcription.text;
+
+      // Apply auto-corrections from learned patterns (if enabled)
+      let correctedText = transcription.text;
+      if (this.pluginSettings().enableCorrectionLearning) {
+        this.statusEl.textContent = 'Applying learned corrections...';
+        const autoCorrection = this.correctionDb.applyAutoCorrections(transcription.text);
+        if (autoCorrection.applied.length > 0) {
+          correctedText = autoCorrection.text;
+          this.toast.info(`Applied ${autoCorrection.applied.length} learned correction(s)`);
+        }
+      }
+
       // Process voice commands (convert "zeddal link word" to [[word]])
-      const processedText = VoiceCommandProcessor.process(transcription.text);
+      const processedText = VoiceCommandProcessor.process(correctedText);
       const resolvedText = await LinkResolver.resolveExistingNotes(
         processedText,
         this.vaultOps,
         { autoLinkFirstMatch: true }
       );
-      const contextLinked = this.pluginSettings().autoContextLinks
-        ? await this.contextLinkService.applyContextLinks(resolvedText)
-        : { text: resolvedText, matches: 0 };
-      this.currentTranscription = contextLinked.text;
+
+      // Set as current transcription (editable by user)
+      this.currentTranscription = resolvedText;
       this.linkCount = this.countLinks(this.currentTranscription);
       this.statusBar()?.setLinkCount(this.linkCount);
 
@@ -233,19 +306,71 @@ export class RecordModal extends Modal {
         }
       }
 
-      // Show the transcription text in the modal
+      // Show the transcription text in an EDITABLE textarea (Tier 1)
       const resultContainer = this.contentEl.createDiv('zeddal-result');
-      resultContainer.createEl('h3', { text: 'Transcription:' });
-      const textEl = resultContainer.createEl('p', {
+      resultContainer.createEl('h3', { text: 'Transcription (editable):' });
+
+      this.editableTranscript = resultContainer.createEl('textarea', {
         text: this.currentTranscription || transcription.text || '(no speech detected)',
         cls: 'zeddal-transcription-text'
       });
-      textEl.style.whiteSpace = 'pre-wrap';
-      textEl.style.padding = '12px';
-      textEl.style.backgroundColor = 'var(--background-secondary)';
-      textEl.style.borderRadius = '6px';
-      textEl.style.marginTop = '12px';
+      this.editableTranscript.style.width = '100%';
+      this.editableTranscript.style.minHeight = '200px';
+      this.editableTranscript.style.whiteSpace = 'pre-wrap';
+      this.editableTranscript.style.padding = '12px';
+      this.editableTranscript.style.backgroundColor = 'var(--background-secondary)';
+      this.editableTranscript.style.borderRadius = '6px';
+      this.editableTranscript.style.marginTop = '12px';
+      this.editableTranscript.style.border = '1px solid var(--background-modifier-border)';
+      this.editableTranscript.style.color = 'var(--text-normal)';
+      this.editableTranscript.style.fontFamily = 'var(--font-monospace)';
+      this.editableTranscript.style.fontSize = '14px';
+      this.editableTranscript.style.resize = 'vertical';
+
+      // Update currentTranscription when user edits
+      this.editableTranscript.addEventListener('input', () => {
+        this.currentTranscription = this.editableTranscript!.value;
+        this.linkCount = this.countLinks(this.currentTranscription);
+        this.statusBar()?.setLinkCount(this.linkCount);
+      });
+
       this.renderLinkSummary(resultContainer, this.linkCount, 'Links detected');
+
+      // Add refinement buttons (Tier 2 & 3)
+      if (this.pluginSettings().enableQuickFixes || this.pluginSettings().enableLocalLLM) {
+        const refinementContainer = resultContainer.createDiv('zeddal-refinement-tools');
+        refinementContainer.style.marginTop = '12px';
+        refinementContainer.style.display = 'flex';
+        refinementContainer.style.gap = '8px';
+        refinementContainer.style.flexWrap = 'wrap';
+
+        // Reformat button (re-run technical formatter)
+        if (this.pluginSettings().formatTechnicalContent) {
+          const reformatBtn = refinementContainer.createEl('button', {
+            text: '🔄 Reformat',
+            cls: 'mod-cta'
+          });
+          reformatBtn.onclick = () => this.reformatTranscription();
+        }
+
+        // Quick Fix button (Tier 2)
+        if (this.pluginSettings().enableQuickFixes) {
+          const quickFixBtn = refinementContainer.createEl('button', {
+            text: '⚡ Quick Fix',
+            cls: 'mod-cta'
+          });
+          quickFixBtn.onclick = () => this.applyQuickFixes();
+        }
+
+        // AI Refinement button (Tier 3)
+        if (this.pluginSettings().enableLocalLLM || this.pluginSettings().openaiApiKey) {
+          const aiRefineBtn = refinementContainer.createEl('button', {
+            text: '✨ Refine with AI',
+            cls: 'mod-cta'
+          });
+          aiRefineBtn.onclick = () => this.showAIRefinementModal();
+        }
+      }
 
       // Replace the control buttons with new actions (only if they exist from recording UI)
       if (this.pauseBtn) {
@@ -401,17 +526,24 @@ export class RecordModal extends Modal {
       // Combine RAG and MCP context
       const combinedContext = [...ragContext, ...mcpContext];
 
-      this.statusEl.textContent = '✨ Refining with GPT-4 (Step 1/2: Analyzing)...';
+      this.statusEl.textContent = '✨ Refining with GPT-4 (unified processing)...';
 
       try {
-        // Show progress during refinement
-        setTimeout(() => {
-          if (this.statusEl) {
-            this.statusEl.textContent = '✨ Refining with GPT-4 (Step 2/2: Generating)...';
-          }
-        }, 1500);
+        // Use unified refinement service (single GPT call for everything)
+        const userCorrectedText = this.rawTranscript !== this.currentTranscription
+          ? this.currentTranscription
+          : undefined;
 
-        const refined = await this.llmRefineService.refine(this.currentTranscription, combinedContext);
+        const refined = await this.unifiedRefinement.refine({
+          rawTranscript: this.rawTranscript,
+          userCorrectedText: userCorrectedText,
+          ragContext: combinedContext,
+          technicalDomain: this.pluginSettings().technicalDomain,
+          includeAudioLink: this.pluginSettings().autoSaveRaw,
+          audioFilePath: this.savedAudioFile?.filePath,
+        });
+
+        // Resolve any remaining wikilinks
         noteToSave = await LinkResolver.resolveExistingNotes(refined.body, this.vaultOps, {
           autoLinkFirstMatch: true,
         });
@@ -419,7 +551,10 @@ export class RecordModal extends Modal {
 
         const wordCount = noteToSave.split(/\s+/).length;
         const contextSummary = `${ragContext.length} RAG + ${mcpContext.length} MCP chunks`;
-        this.statusEl.textContent = `✓ Refinement complete (${wordCount} words, ${contextSummary} used)`;
+        const learningSummary = refined.detectedCorrections
+          ? `, learned ${refined.detectedCorrections.length} pattern(s)`
+          : '';
+        this.statusEl.textContent = `✓ Refinement complete (${wordCount} words, ${contextSummary} used${learningSummary})`;
         this.statusEl.style.color = 'var(--text-accent)';
 
         // Show refined result
@@ -796,6 +931,49 @@ export class RecordModal extends Modal {
     const title = contentEl.createEl('h2', { text: 'Zeddal Recording' });
     title.addClass('zeddal-modal-title');
 
+    // Q&A Mode Toggle (if enabled in settings)
+    if (this.plugin.settings.enableQAMode && this.qaSessionService) {
+      const modeToggleContainer = contentEl.createDiv('zeddal-mode-toggle');
+      modeToggleContainer.style.display = 'flex';
+      modeToggleContainer.style.gap = '8px';
+      modeToggleContainer.style.marginBottom = '16px';
+      modeToggleContainer.style.justifyContent = 'center';
+
+      const standardBtn = modeToggleContainer.createEl('button', {
+        text: 'Standard',
+        cls: !this.isQAMode ? 'mod-cta' : '',
+      });
+      standardBtn.style.flex = '1';
+      standardBtn.onclick = () => {
+        this.isQAMode = false;
+        standardBtn.classList.add('mod-cta');
+        qaBtn.classList.remove('mod-cta');
+      };
+
+      const qaBtn = modeToggleContainer.createEl('button', {
+        text: 'Q&A Session',
+        cls: this.isQAMode ? 'mod-cta' : '',
+      });
+      qaBtn.style.flex = '1';
+      qaBtn.onclick = () => {
+        this.isQAMode = true;
+        qaBtn.classList.add('mod-cta');
+        standardBtn.classList.remove('mod-cta');
+      };
+
+      // Q&A mode indicator
+      if (this.isQAMode) {
+        const indicator = contentEl.createDiv('zeddal-qa-indicator');
+        indicator.textContent = '👥 Q&A Mode: Multi-speaker detection enabled';
+        indicator.style.padding = '8px';
+        indicator.style.backgroundColor = 'var(--background-secondary)';
+        indicator.style.borderRadius = '4px';
+        indicator.style.marginBottom = '12px';
+        indicator.style.textAlign = 'center';
+        indicator.style.fontSize = '13px';
+      }
+    }
+
     this.statusEl = contentEl.createDiv('zeddal-status');
     this.statusEl.innerHTML = '<span class="zeddal-recording-pulse"></span> Recording...';
 
@@ -1033,6 +1211,647 @@ export class RecordModal extends Modal {
     const sentence = clean.split(/(?<=[.!?])\s+/)[0] || clean;
     const snippet = sentence.substring(0, 60).trim();
     return snippet || `Voice Note ${new Date().toLocaleDateString()}`;
+  }
+
+  /**
+   * Handle Q&A session processing
+   */
+  private async handleQASession(audioChunk: AudioChunk): Promise<void> {
+    if (!this.qaSessionService) {
+      this.toast.error('Q&A service not initialized');
+      this.close();
+      return;
+    }
+
+    try {
+      const fileSizeMB = (audioChunk.blob.size / (1024 * 1024)).toFixed(1);
+      const durationSec = Math.floor(audioChunk.duration / 1000);
+
+      // Save raw audio FIRST before any processing
+      this.statusEl.textContent = `Saving raw audio (${fileSizeMB} MB)...`;
+      this.qaAudioFile = await this.audioFileService.saveRecording(audioChunk);
+      this.toast.success('✓ Raw audio saved');
+
+      // Now proceed with Q&A processing
+      this.statusEl.textContent = `Processing Q&A session (${fileSizeMB} MB, ~${durationSec}s)...`;
+
+      // Prompt for speaker labels if enabled
+      const promptForLabels = this.plugin.settings.promptForLabels !== false;
+
+      if (promptForLabels) {
+        const modal = new SpeakerLabelModal(
+          this.app,
+          async (speakers: Speaker[]) => {
+            await this.processQAWithSpeakers(audioChunk.blob, speakers);
+          },
+          this.plugin.settings.defaultLecturerLabel
+        );
+        modal.open();
+      } else {
+        // Let AI infer speakers
+        await this.processQAWithSpeakers(audioChunk.blob, []);
+      }
+    } catch (error) {
+      console.error('Failed to save raw audio:', error);
+      this.toast.error(`Failed to save audio: ${error.message}`);
+      this.close();
+    }
+  }
+
+  /**
+   * Process Q&A session with speaker labels
+   */
+  private async processQAWithSpeakers(audioBlob: Blob, speakers: Speaker[]): Promise<void> {
+    if (!this.qaSessionService) return;
+
+    try {
+      // Step 1: Transcription
+      this.statusEl.textContent = '🎤 Transcribing audio... (Step 1/3)';
+
+      // Get context query from active note or user prompt
+      const contextQuery = 'Q&A session context'; // Could be enhanced to prompt user
+
+      // Start transcription - we'll update progress as we go
+      const sessionPromise = this.qaSessionService.processQASession(
+        audioBlob,
+        speakers.length > 0 ? speakers : undefined,
+        contextQuery
+      );
+
+      // Simulate progress updates (since we can't directly monitor QASessionService)
+      // In a production version, we'd emit events from QASessionService
+      const progressInterval = setInterval(() => {
+        const currentText = this.statusEl.textContent;
+        if (currentText.includes('Step 1')) {
+          this.statusEl.textContent = '🧠 Analyzing speakers... (Step 2/3)';
+        } else if (currentText.includes('Step 2')) {
+          this.statusEl.textContent = '📚 Retrieving context & structuring... (Step 3/3)';
+        }
+      }, 15000); // Update every 15 seconds
+
+      const session = await sessionPromise;
+      clearInterval(progressInterval);
+
+      this.statusEl.textContent = '✓ Q&A session processed successfully';
+
+      // Show preview and save
+      await this.showQAPreviewAndSave(session);
+    } catch (error) {
+      console.error('Failed to process Q&A session:', error);
+      this.toast.error(`Q&A processing failed: ${error.message}`);
+      this.close();
+    }
+  }
+
+  /**
+   * Show Q&A session preview and save options
+   */
+  private async showQAPreviewAndSave(session: QASession): Promise<void> {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass('zeddal-qa-preview');
+
+    const title = contentEl.createEl('h2', { text: 'Q&A Session Processed' });
+    title.style.color = 'var(--text-accent)';
+
+    // Session summary
+    const summary = contentEl.createDiv('zeddal-qa-summary');
+    summary.style.padding = '12px';
+    summary.style.backgroundColor = 'var(--background-secondary)';
+    summary.style.borderRadius = '6px';
+    summary.style.marginBottom = '16px';
+
+    summary.createEl('p', {
+      text: `📊 ${session.pairs.length} questions answered`
+    });
+    summary.createEl('p', {
+      text: `👥 Participants: ${session.participants.map(p => p.label).join(', ')}`
+    });
+
+    if (session.metadata.totalFollowUps > 0) {
+      summary.createEl('p', {
+        text: `💬 ${session.metadata.totalFollowUps} follow-up questions`
+      });
+    }
+
+    // Audio file information (if saved)
+    if (this.qaAudioFile) {
+      const audioInfo = contentEl.createDiv('zeddal-audio-info');
+      audioInfo.style.padding = '12px';
+      audioInfo.style.backgroundColor = 'var(--background-secondary)';
+      audioInfo.style.borderRadius = '6px';
+      audioInfo.style.marginBottom = '16px';
+
+      const sizeInMB = (this.qaAudioFile.size / (1024 * 1024)).toFixed(2);
+      const durationMin = Math.floor(this.qaAudioFile.duration / 60000);
+      const durationSec = Math.floor((this.qaAudioFile.duration % 60000) / 1000);
+
+      audioInfo.createEl('p', {
+        text: `🎤 Raw Audio: ${sizeInMB} MB (${durationMin}:${durationSec.toString().padStart(2, '0')})`
+      });
+
+      // Checkbox for keeping raw audio
+      const checkboxContainer = audioInfo.createDiv();
+      checkboxContainer.style.marginTop = '8px';
+      const checkbox = checkboxContainer.createEl('input', { type: 'checkbox' });
+      checkbox.checked = true; // Default: keep audio
+      checkbox.id = 'keep-audio-checkbox';
+      checkboxContainer.createEl('label', {
+        text: ' Save raw audio recording',
+        attr: { for: 'keep-audio-checkbox' }
+      });
+      checkboxContainer.querySelector('label')!.style.marginLeft = '8px';
+      checkboxContainer.querySelector('label')!.style.cursor = 'pointer';
+    }
+
+    // Preview first Q&A pair
+    if (session.pairs.length > 0) {
+      const preview = contentEl.createDiv('zeddal-qa-preview-content');
+      preview.style.maxHeight = '300px';
+      preview.style.overflow = 'auto';
+      preview.style.padding = '12px';
+      preview.style.backgroundColor = 'var(--background-primary)';
+      preview.style.borderRadius = '6px';
+      preview.style.marginBottom = '16px';
+
+      const firstPair = session.pairs[0];
+      preview.createEl('h4', { text: `Query 1: ${firstPair.summary.substring(0, 50)}...` });
+      preview.createEl('p', {
+        text: `Q: ${firstPair.question.text.substring(0, 100)}...`
+      });
+      preview.createEl('p', {
+        text: `A: ${firstPair.answer.text.substring(0, 100)}...`
+      });
+
+      if (session.pairs.length > 1) {
+        preview.createEl('p', {
+          text: `... and ${session.pairs.length - 1} more questions`,
+          cls: 'zeddal-more-indicator'
+        });
+      }
+    }
+
+    // Save button
+    const saveBtn = contentEl.createEl('button', {
+      text: 'Save Q&A Session',
+      cls: 'mod-cta'
+    });
+    saveBtn.style.width = '100%';
+    saveBtn.style.marginBottom = '8px';
+    saveBtn.onclick = async () => {
+      // Check if user wants to keep audio
+      const keepAudio = this.qaAudioFile
+        ? (contentEl.querySelector('#keep-audio-checkbox') as HTMLInputElement)?.checked ?? true
+        : false;
+      await this.saveQASession(session, keepAudio);
+    };
+
+    // Cancel button
+    const cancelBtn = contentEl.createEl('button', {
+      text: 'Cancel'
+    });
+    cancelBtn.style.width = '100%';
+    cancelBtn.onclick = () => this.close();
+  }
+
+  /**
+   * Save Q&A session to vault
+   */
+  private async saveQASession(session: QASession, keepAudio: boolean = true): Promise<void> {
+    try {
+      this.statusEl.textContent = 'Saving Q&A session...';
+
+      // Get export options from settings
+      const options: QAExportOptions = {
+        format: this.plugin.settings.qaExportFormat || 'both',
+        includeTimestamps: true,
+        includeAudioLinks: keepAudio && Boolean(this.qaAudioFile),
+        includeSummaries: this.plugin.settings.autoSummarize !== false,
+        includeRelatedTopics: true,
+        saveJsonCopy: this.plugin.settings.qaExportFormat === 'both',
+      };
+
+      // Add audio file to session metadata if keeping it
+      if (keepAudio && this.qaAudioFile) {
+        session.metadata.recordingFile = this.qaAudioFile.filePath;
+      }
+
+      // Export session
+      const exported = exportQASession(session, options);
+
+      // Determine save folder
+      const folder = this.plugin.settings.qaSaveFolder || 'Voice Notes/Q&A Sessions';
+
+      // Create folder if it doesn't exist
+      const folderPath = folder.split('/');
+      let currentPath = '';
+      for (const part of folderPath) {
+        currentPath = currentPath ? `${currentPath}/${part}` : part;
+        try {
+          await this.app.vault.createFolder(currentPath);
+        } catch (e) {
+          // Folder already exists, that's fine
+        }
+      }
+
+      // Generate filename with auto-increment if exists
+      const date = new Date(session.date).toISOString().split('T')[0];
+      const sanitized = session.title.replace(/[<>:"/\\|?*]/g, '-');
+      const baseFilename = `${date} ${sanitized}`;
+
+      // Find available filename (handle duplicates)
+      const availableFilename = await this.getAvailableFilename(folder, baseFilename, 'md');
+
+      // Save markdown
+      if (exported.markdown) {
+        const mdPath = `${folder}/${availableFilename}.md`;
+        await this.vaultOps.create(mdPath, exported.markdown);
+      }
+
+      // Save JSON if configured
+      if (exported.json && options.saveJsonCopy) {
+        const jsonPath = `${folder}/${availableFilename}.json`;
+        await this.vaultOps.create(jsonPath, exported.json);
+      }
+
+      // Delete audio file if user chose not to keep it
+      if (!keepAudio && this.qaAudioFile) {
+        try {
+          await this.app.vault.adapter.remove(this.qaAudioFile.filePath);
+          // Also delete metadata if exists
+          const metadataPath = this.qaAudioFile.filePath.replace(/\.(webm|mp3|wav|m4a|ogg)$/, '.metadata.json');
+          if (await this.app.vault.adapter.exists(metadataPath)) {
+            await this.app.vault.adapter.remove(metadataPath);
+          }
+          this.toast.success('✓ Q&A session saved (audio discarded)');
+        } catch (error) {
+          console.warn('Failed to delete audio file:', error);
+        }
+      } else {
+        this.toast.success(`✓ Q&A session saved to ${folder}/`);
+      }
+
+      this.close();
+    } catch (error) {
+      console.error('Failed to save Q&A session:', error);
+      this.toast.error(`Failed to save: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get available filename with auto-increment for duplicates
+   */
+  private async getAvailableFilename(folder: string, baseFilename: string, extension: string): Promise<string> {
+    let filename = baseFilename;
+    let counter = 1;
+
+    while (await this.app.vault.adapter.exists(`${folder}/${filename}.${extension}`)) {
+      filename = `${baseFilename} (${counter})`;
+      counter++;
+    }
+
+    return filename;
+  }
+
+  /**
+   * Reformat transcription with technical formatter
+   */
+  private async reformatTranscription(): Promise<void> {
+    if (!this.editableTranscript) return;
+
+    const originalText = this.editableTranscript.value;
+
+    try {
+      this.toast.info('Reformatting...');
+
+      const formattedText = await this.transcriptFormatter.formatTechnicalContent(
+        originalText,
+        this.pluginSettings().technicalDomain
+      );
+
+      this.editableTranscript.value = formattedText;
+      this.currentTranscription = formattedText;
+      this.linkCount = this.countLinks(formattedText);
+      this.statusBar()?.setLinkCount(this.linkCount);
+
+      this.toast.success('✓ Reformatted successfully');
+    } catch (error) {
+      console.error('Reformatting failed:', error);
+      this.toast.error('Reformatting failed');
+    }
+  }
+
+  /**
+   * Apply quick fixes with preview (Tier 2)
+   */
+  private async applyQuickFixes(): Promise<void> {
+    if (!this.editableTranscript) return;
+
+    const originalText = this.editableTranscript.value;
+
+    try {
+      // Preview fixes
+      const result = this.quickFixService.previewFixes(originalText);
+
+      if (!result.applied) {
+        this.toast.info('No fixes needed - text looks good!');
+        return;
+      }
+
+      // Show preview modal
+      const modal = new Modal(this.app);
+      modal.titleEl.setText('Quick Fix Preview');
+
+      const { contentEl } = modal;
+      contentEl.createEl('p', {
+        text: this.quickFixService.generateSummary(result),
+        cls: 'zeddal-fix-summary'
+      });
+
+      // Show diff
+      const diffContainer = contentEl.createDiv('zeddal-diff-container');
+      diffContainer.style.maxHeight = '400px';
+      diffContainer.style.overflow = 'auto';
+      diffContainer.style.padding = '12px';
+      diffContainer.style.backgroundColor = 'var(--background-secondary)';
+      diffContainer.style.borderRadius = '6px';
+      diffContainer.style.marginTop = '12px';
+      diffContainer.style.fontFamily = 'var(--font-monospace)';
+      diffContainer.style.fontSize = '13px';
+
+      const diffText = diffContainer.createEl('pre', {
+        text: this.quickFixService.generateDiff(result)
+      });
+      diffText.style.whiteSpace = 'pre-wrap';
+      diffText.style.margin = '0';
+
+      // Buttons
+      const buttonContainer = contentEl.createDiv('zeddal-modal-buttons');
+      buttonContainer.style.display = 'flex';
+      buttonContainer.style.gap = '8px';
+      buttonContainer.style.marginTop = '16px';
+
+      const applyBtn = buttonContainer.createEl('button', {
+        text: 'Apply Fixes',
+        cls: 'mod-cta'
+      });
+      applyBtn.onclick = () => {
+        this.editableTranscript!.value = result.fixedText;
+        this.currentTranscription = result.fixedText;
+        this.linkCount = this.countLinks(result.fixedText);
+        this.statusBar()?.setLinkCount(this.linkCount);
+        this.toast.success(`✓ Applied ${result.fixes.length} fix type(s)`);
+        modal.close();
+      };
+
+      const cancelBtn = buttonContainer.createEl('button', {
+        text: 'Cancel'
+      });
+      cancelBtn.onclick = () => modal.close();
+
+      modal.open();
+    } catch (error) {
+      console.error('Quick fixes failed:', error);
+      this.toast.error('Quick fixes failed');
+    }
+  }
+
+  /**
+   * Show AI refinement modal with voice/text input (Tier 3)
+   */
+  private async showAIRefinementModal(): Promise<void> {
+    if (!this.editableTranscript) return;
+
+    const modal = new Modal(this.app);
+    modal.titleEl.setText('AI Refinement');
+
+    const { contentEl } = modal;
+
+    // Provider selection
+    const providerInfo = contentEl.createDiv('zeddal-provider-info');
+    providerInfo.style.padding = '12px';
+    providerInfo.style.backgroundColor = 'var(--background-secondary)';
+    providerInfo.style.borderRadius = '6px';
+    providerInfo.style.marginBottom = '16px';
+
+    if (this.localLLMService && this.pluginSettings().enableLocalLLM) {
+      const provider = this.localLLMService.getProvider();
+      providerInfo.createEl('p', {
+        text: `🖥️ Using: ${provider.type} (${provider.model})`
+      });
+      providerInfo.createEl('p', {
+        text: `URL: ${provider.baseUrl}`,
+        cls: 'zeddal-provider-url'
+      });
+    } else if (this.pluginSettings().openaiApiKey) {
+      providerInfo.createEl('p', {
+        text: `☁️ Using: OpenAI (${this.pluginSettings().gptModel || 'gpt-4-turbo'})`
+      });
+      providerInfo.createEl('p', {
+        text: 'Note: This will use your OpenAI API key',
+        cls: 'zeddal-provider-note'
+      });
+    } else {
+      providerInfo.createEl('p', {
+        text: '⚠️ No AI provider configured. Enable local LLM or add OpenAI API key in settings.',
+        cls: 'zeddal-provider-warning'
+      });
+      const closeBtn = contentEl.createEl('button', {
+        text: 'Close',
+        cls: 'mod-cta'
+      });
+      closeBtn.onclick = () => modal.close();
+      modal.open();
+      return;
+    }
+
+    // Instruction input
+    contentEl.createEl('h4', { text: 'Refinement Instructions:' });
+
+    const instructionInput = contentEl.createEl('textarea');
+    instructionInput.placeholder = 'E.g., "Fix capitalization in file paths", "Add proper punctuation", "Correct command flags"';
+    instructionInput.style.width = '100%';
+    instructionInput.style.minHeight = '80px';
+    instructionInput.style.padding = '8px';
+    instructionInput.style.border = '1px solid var(--background-modifier-border)';
+    instructionInput.style.borderRadius = '4px';
+    instructionInput.style.backgroundColor = 'var(--background-primary)';
+    instructionInput.style.color = 'var(--text-normal)';
+    instructionInput.style.fontFamily = 'var(--font-text)';
+    instructionInput.style.fontSize = '14px';
+    instructionInput.style.marginBottom = '16px';
+    instructionInput.style.resize = 'vertical';
+
+    // Buttons
+    const buttonContainer = contentEl.createDiv('zeddal-modal-buttons');
+    buttonContainer.style.display = 'flex';
+    buttonContainer.style.gap = '8px';
+
+    // Voice instruction button
+    const voiceBtn = buttonContainer.createEl('button', {
+      text: '🎤 Record Instruction',
+      cls: 'mod-cta'
+    });
+    voiceBtn.onclick = async () => {
+      this.toast.info('Recording voice instruction...');
+      try {
+        // Start recording for voice instruction
+        await this.recorderService.start();
+
+        voiceBtn.textContent = '⏹️ Stop Recording';
+        voiceBtn.onclick = async () => {
+          this.recorderService.stop();
+          voiceBtn.textContent = 'Processing...';
+          voiceBtn.disabled = true;
+
+          // Wait for recording-stopped event
+          const handleRecording = async (event: any) => {
+            const { audioChunk } = event.data;
+
+            // Transcribe voice instruction
+            const transcription = await this.whisperService.transcribe(audioChunk);
+            instructionInput.value = transcription.text;
+            this.toast.success('Voice instruction captured');
+
+            voiceBtn.textContent = '🎤 Record Instruction';
+            voiceBtn.disabled = false;
+
+            // Remove listener
+            eventBus.off('recording-stopped', handleRecording);
+          };
+
+          eventBus.on('recording-stopped', handleRecording);
+        };
+      } catch (error) {
+        console.error('Voice recording failed:', error);
+        this.toast.error('Failed to record voice instruction');
+      }
+    };
+
+    // Apply refinement button
+    const applyBtn = buttonContainer.createEl('button', {
+      text: '✨ Apply Refinement',
+      cls: 'mod-cta'
+    });
+    applyBtn.onclick = async () => {
+      const instruction = instructionInput.value.trim();
+      if (!instruction) {
+        this.toast.error('Please provide refinement instructions');
+        return;
+      }
+
+      applyBtn.textContent = 'Refining...';
+      applyBtn.disabled = true;
+
+      try {
+        const refinementInstruction: RefinementInstruction = {
+          type: 'text',
+          content: instruction,
+          originalText: this.editableTranscript!.value,
+        };
+
+        let result;
+
+        if (this.localLLMService && this.pluginSettings().enableLocalLLM) {
+          result = await this.localLLMService.refineWithInstruction(refinementInstruction);
+        } else {
+          // Fallback to OpenAI
+          result = await this.refineWithOpenAI(refinementInstruction);
+        }
+
+        if (result.success) {
+          this.editableTranscript!.value = result.refinedText;
+          this.currentTranscription = result.refinedText;
+          this.linkCount = this.countLinks(result.refinedText);
+          this.statusBar()?.setLinkCount(this.linkCount);
+
+          const duration = result.duration ? `${(result.duration / 1000).toFixed(1)}s` : '';
+          this.toast.success(`✓ Refined successfully ${duration}`);
+          modal.close();
+        } else {
+          this.toast.error(`Refinement failed: ${result.error || 'Unknown error'}`);
+        }
+      } catch (error) {
+        console.error('AI refinement failed:', error);
+        this.toast.error('AI refinement failed');
+      } finally {
+        applyBtn.textContent = '✨ Apply Refinement';
+        applyBtn.disabled = false;
+      }
+    };
+
+    const cancelBtn = buttonContainer.createEl('button', {
+      text: 'Cancel'
+    });
+    cancelBtn.onclick = () => modal.close();
+
+    modal.open();
+    instructionInput.focus();
+  }
+
+  /**
+   * Refine with OpenAI (fallback when local LLM not available)
+   */
+  private async refineWithOpenAI(instruction: RefinementInstruction): Promise<any> {
+    const prompt = `You are a helpful assistant that refines transcribed text based on user instructions.
+
+Original transcription:
+${instruction.originalText}
+
+User instruction:
+${instruction.content}
+
+Please apply the requested changes to the transcription. Return ONLY the refined text without any explanations or preamble.
+
+Refined transcription:`;
+
+    const startTime = Date.now();
+
+    try {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.pluginSettings().openaiApiKey}`,
+        },
+        body: JSON.stringify({
+          model: this.pluginSettings().gptModel || 'gpt-4-turbo',
+          messages: [
+            {
+              role: 'user',
+              content: prompt,
+            },
+          ],
+          temperature: 0.3,
+          max_tokens: 2048,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`OpenAI API error: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const refinedText = data.choices[0]?.message?.content || instruction.originalText;
+
+      return {
+        success: true,
+        refinedText,
+        provider: 'openai',
+        model: this.pluginSettings().gptModel || 'gpt-4-turbo',
+        tokensUsed: data.usage?.total_tokens,
+        duration: Date.now() - startTime,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        refinedText: instruction.originalText,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        provider: 'openai',
+        model: this.pluginSettings().gptModel || 'gpt-4-turbo',
+        duration: Date.now() - startTime,
+      };
+    }
   }
 
   private pluginSettings(): ZeddalSettings {

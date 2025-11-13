@@ -38,6 +38,38 @@ export const DEFAULT_SETTINGS: ZeddalSettings = {
   // MCP settings
   enableMCP: false, // Disabled by default - user must explicitly enable
   mcpServers: [], // No servers configured by default
+  // Q&A Session settings
+  enableQAMode: true, // Enable Q&A mode (opt-in per recording)
+  defaultLecturerLabel: 'Lecturer',
+  defaultStudentLabel: 'Student',
+  minPauseDuration: 2.0, // 2 seconds pause for speaker change detection
+  autoSummarize: true,
+  includeRAGContext: true, // Use vault context for Q&A
+  ragTopKForQA: 5, // More context for Q&A sessions
+  qaExportFormat: 'both', // Export both markdown and JSON
+  qaSaveFolder: 'Voice Notes/Q&A Sessions',
+  promptForLabels: true, // Ask user for speaker names
+  // Technical Content Formatting settings
+  formatTechnicalContent: true, // Enable LaTeX and code formatting
+  technicalDomain: 'auto', // Auto-detect domain (math, code, science)
+  enableInlineLaTeX: true, // Enable inline LaTeX ($...$)
+  enableDisplayLaTeX: true, // Enable display LaTeX ($$...$$)
+  enableCodeBlocks: true, // Enable code block formatting
+  // Transcript Refinement settings
+  enableQuickFixes: true, // Enable rule-based quick fixes
+  enableLocalLLM: false, // Disabled by default (requires local LLM setup)
+  localLLMProvider: 'ollama', // Default to Ollama
+  localLLMBaseUrl: 'http://localhost:11434', // Default Ollama URL
+  localLLMModel: 'llama3.2', // Default model
+  localLLMApiKey: '', // No API key by default
+  // Correction Learning settings
+  enableCorrectionLearning: true, // Enable learning from corrections
+  showCorrectionWindow: true, // Show correction window after transcription
+  autoApplyThreshold: 0.9, // Auto-apply at 90% confidence
+  enableCorrectionSharing: false, // Disabled by default (personal only)
+  enableCloudBackup: false, // Future feature
+  enableFineTuning: false, // Future feature
+  showSuggestedCorrections: true, // Show suggestions by default
 };
 
 export class Config {

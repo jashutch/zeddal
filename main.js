@@ -1,7 +1,3 @@
-// Copyright © 2025 Jason Hutchcraft
-// Licensed under the Business Source License 1.1 (see LICENSE for details)
-// Change Date: 2029-01-01 → Apache 2.0 License
-
 'use strict';
 
 var obsidian = require('obsidian');
@@ -43,10 +39,9 @@ typeof SuppressedError === "function" ? SuppressedError : function (error, suppr
     return e.name = "SuppressedError", e.error = error, e.suppressed = suppressed, e;
 };
 
-/**
- * Config: Settings management for Zeddal
- * Architecture: Type-safe configuration with defaults
- */
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
 const DEFAULT_SETTINGS = {
     openaiApiKey: '',
     openaiModel: 'gpt-4-turbo',
@@ -76,6 +71,38 @@ const DEFAULT_SETTINGS = {
     // MCP settings
     enableMCP: false, // Disabled by default - user must explicitly enable
     mcpServers: [], // No servers configured by default
+    // Q&A Session settings
+    enableQAMode: true, // Enable Q&A mode (opt-in per recording)
+    defaultLecturerLabel: 'Lecturer',
+    defaultStudentLabel: 'Student',
+    minPauseDuration: 2.0, // 2 seconds pause for speaker change detection
+    autoSummarize: true,
+    includeRAGContext: true, // Use vault context for Q&A
+    ragTopKForQA: 5, // More context for Q&A sessions
+    qaExportFormat: 'both', // Export both markdown and JSON
+    qaSaveFolder: 'Voice Notes/Q&A Sessions',
+    promptForLabels: true, // Ask user for speaker names
+    // Technical Content Formatting settings
+    formatTechnicalContent: true, // Enable LaTeX and code formatting
+    technicalDomain: 'auto', // Auto-detect domain (math, code, science)
+    enableInlineLaTeX: true, // Enable inline LaTeX ($...$)
+    enableDisplayLaTeX: true, // Enable display LaTeX ($$...$$)
+    enableCodeBlocks: true, // Enable code block formatting
+    // Transcript Refinement settings
+    enableQuickFixes: true, // Enable rule-based quick fixes
+    enableLocalLLM: false, // Disabled by default (requires local LLM setup)
+    localLLMProvider: 'ollama', // Default to Ollama
+    localLLMBaseUrl: 'http://localhost:11434', // Default Ollama URL
+    localLLMModel: 'llama3.2', // Default model
+    localLLMApiKey: '', // No API key by default
+    // Correction Learning settings
+    enableCorrectionLearning: true, // Enable learning from corrections
+    showCorrectionWindow: true, // Show correction window after transcription
+    autoApplyThreshold: 0.9, // Auto-apply at 90% confidence
+    enableCorrectionSharing: false, // Disabled by default (personal only)
+    enableCloudBackup: false, // Future feature
+    enableFineTuning: false, // Future feature
+    showSuggestedCorrections: true, // Show suggestions by default
 };
 class Config {
     constructor(settings) {
@@ -101,10 +128,9 @@ class Config {
     }
 }
 
-/**
- * EventBus: Lightweight pub/sub system for Zeddal
- * Architecture: Central event coordination for recording → transcription → refinement → merge flow
- */
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
 class EventBus {
     constructor() {
         this.listeners = new Map();
@@ -178,6 +204,9 @@ class EventBus {
 // Global singleton instance
 const eventBus = new EventBus();
 
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
 const defaultNow = typeof performance !== 'undefined' && performance.now
     ? () => performance.now()
     : () => Date.now();
@@ -233,10 +262,9 @@ class RecordingTelemetry {
     }
 }
 
-/**
- * RecorderService: Audio recording with RMS-based silence detection
- * Architecture: Manages MediaRecorder, AudioContext analysis, and auto-pause on silence
- */
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
 class RecorderService {
     constructor(config) {
         this.mediaRecorder = null;
@@ -297,7 +325,8 @@ class RecorderService {
                 });
                 this.chunks = [];
                 this.mediaRecorder.ondataavailable = (event) => {
-                    console.log('Data available:', event.data.size, 'bytes');
+                    // Debug logging disabled to prevent console spam
+                    // console.log('Data available:', event.data.size, 'bytes');
                     if (event.data.size > 0) {
                         this.chunks.push(event.data);
                     }
@@ -399,10 +428,11 @@ class RecorderService {
                 sum += dataArray[i] * dataArray[i];
             }
             const rms = Math.sqrt(sum / bufferLength);
-            // Log RMS every second for debugging
-            if (Date.now() % 1000 < 50) {
-                console.log('RMS level:', rms.toFixed(4), 'Confidence:', (rms * 10).toFixed(2));
-            }
+            // Debug logging disabled to prevent console spam
+            // Uncomment for debugging audio quality issues:
+            // if (Date.now() % 1000 < 50) {
+            //   console.log('RMS level:', rms.toFixed(4), 'Confidence:', (rms * 10).toFixed(2));
+            // }
             // Update confidence based on RMS (normalize to 0-1 range)
             this.state.confidence = Math.min(1.0, rms * 10);
             const vadThreshold = this.config.get('silenceThreshold');
@@ -7102,10 +7132,9 @@ OpenAI.EvalListResponsesPage = EvalListResponsesPage;
 OpenAI.Containers = Containers;
 OpenAI.ContainerListResponsesPage = ContainerListResponsesPage;
 
-/**
- * WhisperService: OpenAI Whisper transcription with confidence tracking
- * Architecture: Converts audio chunks to text using OpenAI whisper-1 model
- */
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
 class WhisperService {
     constructor(config) {
         this.openai = null;
@@ -7279,10 +7308,9 @@ class WhisperService {
     }
 }
 
-/**
- * CitationHelper: Extract inline citations already provided by GPT output.
- * We no longer fabricate hyperlinks—citations must exist in the refined text.
- */
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
 const MARKDOWN_LINK_REGEX = /\[([^\]]+)\]\((https?:[^)]+)\)/g;
 class CitationHelper {
     static extract(text) {
@@ -7303,11 +7331,9 @@ class CitationHelper {
     }
 }
 
-/**
- * LLMRefineService: GPT-4 refinement with RAG context
- * Architecture: Refine transcription using vault context and user style
- * Status: Phase 2 - Implemented
- */
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
 class LLMRefineService {
     constructor(config) {
         this.config = config;
@@ -7493,10 +7519,9 @@ class LLMRefineService {
     }
 }
 
-/**
- * TextChunker: Split text into overlapping chunks for embedding
- * Architecture: Token-aware chunking with configurable overlap
- */
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
 class TextChunker {
     /**
      * Split text into overlapping chunks
@@ -7603,10 +7628,9 @@ class TextChunker {
     }
 }
 
-/**
- * VectorMath: Vector operations for embedding similarity
- * Architecture: Pure functions for cosine similarity and vector operations
- */
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
 class VectorMath {
     /**
      * Compute cosine similarity between two embedding vectors
@@ -7672,10 +7696,9 @@ class VectorMath {
     }
 }
 
-/**
- * OpenAIEmbeddingProvider: OpenAI text-embedding-3-small integration
- * Architecture: BYOK (Bring Your Own Key) model using official OpenAI SDK
- */
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
 class OpenAIEmbeddingProvider {
     constructor(config) {
         this.config = config;
@@ -7747,15 +7770,9 @@ class OpenAIEmbeddingProvider {
     }
 }
 
-/**
- * CustomEmbeddingProvider: Local/self-hosted embedding service
- * Architecture: OpenAI-compatible API for walled infrastructure (DOD/DOJ)
- *
- * Supports:
- * - Local RAG servers (e.g., text-embeddings-inference, sentence-transformers)
- * - Air-gapped deployments
- * - Custom embedding models
- */
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
 class CustomEmbeddingProvider {
     constructor(config) {
         this.config = config;
@@ -7832,10 +7849,9 @@ class CustomEmbeddingProvider {
     }
 }
 
-/**
- * EmbeddingProviderFactory: Factory for creating embedding providers
- * Architecture: Strategy pattern for swappable embedding backends
- */
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
 class EmbeddingProviderFactory {
     /**
      * Create an embedding provider based on config settings
@@ -7856,17 +7872,9 @@ class EmbeddingProviderFactory {
     }
 }
 
-/**
- * VaultRAGService: Retrieval-Augmented Generation for vault context
- * Architecture: Vector-based semantic search with persistent caching
- *
- * Features:
- * - OpenAI or custom/local embedding providers
- * - In-memory vector index with disk persistence
- * - Incremental updates on file changes
- * - Cosine similarity search
- * - Writing style analysis
- */
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
 class VaultRAGService {
     constructor(app, config) {
         this.index = [];
@@ -22218,16 +22226,9 @@ function isElectron() {
     return 'type' in process$1;
 }
 
-/**
- * MCPClientService: Manages connections to Model Context Protocol servers
- * Architecture: Optional enhancement layer for context retrieval
- *
- * Features:
- * - Connect to multiple MCP servers via stdio transport
- * - Fetch resources and prompts from servers
- * - Graceful degradation if MCP is disabled or fails
- * - Non-blocking - doesn't interrupt existing workflows
- */
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
 class MCPClientService {
     constructor(config) {
         this.clients = new Map();
@@ -22429,16 +22430,9 @@ class MCPClientService {
     }
 }
 
-/**
- * AudioFileService: Manages saving and loading audio recordings
- * Architecture: Persistent audio storage with metadata tracking
- *
- * Features:
- * - Save audio blobs to vault with unique filenames
- * - Load audio files for playback or re-transcription
- * - Generate metadata files alongside audio
- * - Support drag-and-drop workflow
- */
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
 class AudioFileService {
     constructor(app, config) {
         this.app = app;
@@ -22665,11 +22659,9 @@ class AudioFileService {
     }
 }
 
-/**
- * VaultOps: Safe vault file operations
- * Architecture: Read/write with Obsidian API and history tracking
- * Status: Phase 2 - Implemented
- */
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
 class VaultOps {
     constructor(app) {
         this.app = app;
@@ -22880,6 +22872,9 @@ class VaultOps {
     }
 }
 
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
 /**
  * VoiceCommandProcessor: Process voice commands for wikilinks and formatting
  * Architecture: Post-process transcriptions to convert voice commands to markdown
@@ -23102,9 +23097,9 @@ class VoiceCommandProcessor {
     }
 }
 
-/**
- * LinkResolver: Ensures voice command wikilinks target existing vault notes
- */
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
 class LinkResolver {
     /**
      * Resolve wikilinks in text to canonical vault note titles when possible.
@@ -23293,6 +23288,9 @@ class LinkResolver {
     }
 }
 
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
 const mapConfidenceToStatus = (score) => {
     const value = Math.max(0, Math.min(1, score || 0));
     if (value >= 0.85) {
@@ -23323,12 +23321,833 @@ const mapConfidenceToStatus = (score) => {
     };
 };
 
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
 /**
- * RecordModal: Recording interface with live progress
- * Architecture: Modal showing confidence %, duration, pause/resume/stop controls
+ * SpeakerLabelModal: User interface for defining speaker labels
+ * Architecture: Modal dialog for Q&A session speaker configuration
  */
+class SpeakerLabelModal extends obsidian.Modal {
+    constructor(app, onSubmit, defaultLecturerLabel) {
+        super(app);
+        this.speakers = [];
+        this.lecturerLabel = 'Lecturer';
+        this.studentCount = 1;
+        this.onSubmit = onSubmit;
+        if (defaultLecturerLabel) {
+            this.lecturerLabel = defaultLecturerLabel;
+        }
+    }
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.createEl('h2', { text: 'Q&A Session Speaker Labels' });
+        contentEl.createEl('p', {
+            text: 'Define speaker labels for this Q&A session. The AI will attempt to match speakers to these labels.',
+            cls: 'setting-item-description',
+        });
+        // Lecturer label
+        new obsidian.Setting(contentEl)
+            .setName('Lecturer/Professor Name')
+            .setDesc('Name of the instructor or main speaker')
+            .addText(text => text
+            .setPlaceholder('e.g., Prof. Smith, Dr. Johnson')
+            .setValue(this.lecturerLabel)
+            .onChange(value => {
+            this.lecturerLabel = value || 'Lecturer';
+        }));
+        // Number of students
+        new obsidian.Setting(contentEl)
+            .setName('Number of Students')
+            .setDesc('How many different students are asking questions?')
+            .addSlider(slider => slider
+            .setLimits(1, 10, 1)
+            .setValue(this.studentCount)
+            .setDynamicTooltip()
+            .onChange(value => {
+            this.studentCount = value;
+            this.updateStudentInputs(contentEl);
+        }));
+        // Container for student inputs
+        const studentContainer = contentEl.createDiv({ cls: 'student-labels-container' });
+        this.updateStudentInputs(studentContainer);
+        // Options
+        contentEl.createEl('h3', { text: 'Advanced Options' });
+        let useGenericLabels = false;
+        new obsidian.Setting(contentEl)
+            .setName('Use Generic Labels')
+            .setDesc('Use "Student 1", "Student 2" instead of names')
+            .addToggle(toggle => toggle.setValue(useGenericLabels).onChange(value => {
+            useGenericLabels = value;
+        }));
+        // Buttons
+        const buttonContainer = contentEl.createDiv({ cls: 'modal-button-container' });
+        buttonContainer.createEl('button', {
+            text: 'Process Q&A Session',
+            cls: 'mod-cta',
+        }).addEventListener('click', () => {
+            this.buildSpeakers(useGenericLabels);
+            this.close();
+            this.onSubmit(this.speakers);
+        });
+        buttonContainer.createEl('button', {
+            text: 'Let AI Infer Labels',
+        }).addEventListener('click', () => {
+            // Submit with empty speakers array - AI will infer
+            this.close();
+            this.onSubmit([]);
+        });
+        buttonContainer.createEl('button', {
+            text: 'Cancel',
+        }).addEventListener('click', () => {
+            this.close();
+        });
+    }
+    /**
+     * Update student input fields based on count
+     */
+    updateStudentInputs(container) {
+        container.empty();
+        for (let i = 0; i < this.studentCount; i++) {
+            new obsidian.Setting(container)
+                .setName(`Student ${i + 1}`)
+                .setDesc(`Name of student ${i + 1} (optional)`)
+                .addText(text => text
+                .setPlaceholder(`e.g., Sarah Chen, Mike Johnson`)
+                .inputEl.setAttribute('data-student-index', String(i)));
+        }
+    }
+    /**
+     * Build speakers array from inputs
+     */
+    buildSpeakers(useGenericLabels) {
+        this.speakers = [];
+        // Add lecturer
+        this.speakers.push({
+            id: 'lecturer',
+            label: this.lecturerLabel,
+            role: 'lecturer',
+        });
+        // Add students
+        const studentInputs = this.contentEl.querySelectorAll('[data-student-index]');
+        studentInputs.forEach((input, index) => {
+            const inputEl = input;
+            let label = inputEl.value.trim();
+            if (useGenericLabels || !label) {
+                label = `Student ${index + 1}`;
+            }
+            this.speakers.push({
+                id: `student${index + 1}`,
+                label,
+                role: 'student',
+            });
+        });
+    }
+    onClose() {
+        const { contentEl } = this;
+        contentEl.empty();
+    }
+}
+
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
+/**
+ * Format Q&A session as beautiful markdown
+ */
+function formatQAMarkdown(session, options) {
+    let md = '';
+    // Header
+    md += `# ${session.title}\n\n`;
+    md += `**Date:** ${new Date(session.date).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+    })}\n`;
+    {
+        const duration = Math.floor(session.duration);
+        const minutes = Math.floor(duration / 60);
+        const seconds = duration % 60;
+        md += `**Duration:** ${minutes}:${seconds.toString().padStart(2, '0')}\n`;
+    }
+    md += `**Participants:** ${session.participants.map(p => p.label).join(', ')}\n\n`;
+    if (session.metadata.recordingFile && options.includeAudioLinks) {
+        md += `**Recording:** [[${session.metadata.recordingFile}]]\n\n`;
+    }
+    md += `---\n\n`;
+    // Q&A Pairs
+    session.pairs.forEach((pair, index) => {
+        md += formatQAPair(pair, options, index === session.pairs.length - 1);
+    });
+    // Footer metadata
+    md += `\n---\n\n`;
+    md += `**Session Statistics:**\n`;
+    md += `- Total Questions: ${session.metadata.totalQuestions}\n`;
+    md += `- Follow-up Questions: ${session.metadata.totalFollowUps}\n`;
+    if (session.metadata.ragContextUsed) {
+        md += `- Context Integration: ✓ Enabled\n`;
+    }
+    return md;
+}
+/**
+ * Format a single Q&A pair (with follow-ups)
+ */
+function formatQAPair(pair, options, isLast) {
+    let md = '';
+    // Main question heading
+    md += `## Query ${pair.number}: ${generateHeadingFromSummary(pair.summary)}\n\n`;
+    // Timestamp for question
+    if (pair.question.timestamp !== undefined) {
+        md += `\`timestamp: ${formatTimestamp(pair.question.timestamp)}`;
+        if (pair.answer.timestamp !== undefined) {
+            md += ` - ${formatTimestamp(pair.answer.timestamp)}`;
+        }
+        md += `\` | \`${pair.question.speaker} → ${pair.answer.speaker}\`\n\n`;
+    }
+    // Question
+    md += `**Question (${pair.question.speaker}):**\n`;
+    md += `"${pair.question.text}"\n\n`;
+    // Answer
+    md += `**Answer (${pair.answer.speaker}):**\n`;
+    md += `"${pair.answer.text}"\n\n`;
+    // Summary
+    if (options.includeSummaries) {
+        md += `**Summary:** ${pair.summary}\n\n`;
+    }
+    // Related topics
+    if (pair.relatedTopics && pair.relatedTopics.length > 0) {
+        md += `**Related Topics:** ${pair.relatedTopics.map(t => `[[${t}]]`).join(', ')}\n\n`;
+    }
+    // Follow-ups
+    if (pair.followUps && pair.followUps.length > 0) {
+        pair.followUps.forEach(followUp => {
+            md += `### Query ${followUp.number}: Follow-up ${generateHeadingFromSummary(followUp.summary)}\n\n`;
+            if (followUp.question.timestamp !== undefined) {
+                md += `\`timestamp: ${formatTimestamp(followUp.question.timestamp)}`;
+                if (followUp.answer.timestamp !== undefined) {
+                    md += ` - ${formatTimestamp(followUp.answer.timestamp)}`;
+                }
+                md += `\`\n\n`;
+            }
+            md += `**Question (${followUp.question.speaker}):**\n`;
+            md += `"${followUp.question.text}"\n\n`;
+            md += `**Answer (${followUp.answer.speaker}):**\n`;
+            md += `"${followUp.answer.text}"\n\n`;
+            if (options.includeSummaries) {
+                md += `**Summary:** ${followUp.summary}\n\n`;
+            }
+            if (followUp.relatedTopics &&
+                followUp.relatedTopics.length > 0) {
+                md += `**Related Topics:** ${followUp.relatedTopics.map(t => `[[${t}]]`).join(', ')}\n\n`;
+            }
+        });
+    }
+    // Separator between questions (unless last)
+    if (!isLast) {
+        md += `---\n\n`;
+    }
+    return md;
+}
+/**
+ * Generate a short heading from summary
+ */
+function generateHeadingFromSummary(summary) {
+    // Extract first 5-7 words or up to first sentence
+    const words = summary.split(' ');
+    if (words.length <= 7) {
+        return summary.replace(/\.$/, '');
+    }
+    // Take first 7 words and add ellipsis
+    return words.slice(0, 7).join(' ') + '...';
+}
+/**
+ * Format timestamp as MM:SS
+ */
+function formatTimestamp(seconds) {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+/**
+ * Format Q&A session as JSON
+ */
+function formatQAJSON(session) {
+    // Convert to pretty-printed JSON
+    return JSON.stringify(session, null, 2);
+}
+/**
+ * Export Q&A session based on options
+ */
+function exportQASession(session, options) {
+    const result = {};
+    if (options.format === 'markdown' || options.format === 'both') {
+        result.markdown = formatQAMarkdown(session, options);
+    }
+    if (options.format === 'json' ||
+        options.format === 'both' ||
+        options.saveJsonCopy) {
+        result.json = formatQAJSON(session);
+    }
+    return result;
+}
+
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
+class QuickFixService {
+    constructor() {
+        this.fixes = [
+            // Shell command flag fixes
+            {
+                name: 'Shell Flags',
+                description: 'Add missing hyphens to command flags',
+                pattern: /\b(tar|ls|ps|grep|find|docker|git|npm|curl|wget)\s+([a-zA-Z]{2,})\b/g,
+                replacement: (match, cmd, flags) => {
+                    // Don't fix if it's likely a subcommand or argument
+                    const knownSubcommands = ['install', 'build', 'run', 'test', 'start', 'stop', 'clone', 'pull', 'push', 'status', 'commit', 'add', 'remove'];
+                    if (knownSubcommands.includes(flags.toLowerCase())) {
+                        return match;
+                    }
+                    // Add hyphen to flags
+                    return `${cmd} -${flags}`;
+                },
+                examples: [
+                    { input: 'tar cvf archive.tar', output: 'tar -cvf archive.tar' },
+                    { input: 'ls la', output: 'ls -la' },
+                    { input: 'ps aux', output: 'ps -aux' },
+                ],
+            },
+            // Path capitalization fixes (macOS/Windows common folders)
+            {
+                name: 'Path Capitalization',
+                description: 'Fix capitalization of common system folders',
+                pattern: /~\/(documents|downloads|desktop|pictures|music|videos|applications|library)/gi,
+                replacement: (match, folder) => {
+                    const capitalizedFolders = {
+                        documents: 'Documents',
+                        downloads: 'Downloads',
+                        desktop: 'Desktop',
+                        pictures: 'Pictures',
+                        music: 'Music',
+                        videos: 'Videos',
+                        applications: 'Applications',
+                        library: 'Library',
+                    };
+                    return `~/${capitalizedFolders[folder.toLowerCase()] || folder}`;
+                },
+                examples: [
+                    { input: '~/documents/file.txt', output: '~/Documents/file.txt' },
+                    { input: '~/downloads', output: '~/Downloads' },
+                ],
+            },
+            // Common command typos
+            {
+                name: 'Command Typos',
+                description: 'Fix common command misspellings',
+                pattern: /\b(grpe|dcoker|gti|npm i|pytohn|jaav|tsc -w|ndoe)\b/gi,
+                replacement: (match) => {
+                    const corrections = {
+                        grpe: 'grep',
+                        dcoker: 'docker',
+                        gti: 'git',
+                        'npm i': 'npm install',
+                        pytohn: 'python',
+                        jaav: 'java',
+                        'tsc -w': 'tsc --watch',
+                        ndoe: 'node',
+                    };
+                    return corrections[match.toLowerCase()] || match;
+                },
+                examples: [
+                    { input: 'grpe pattern file.txt', output: 'grep pattern file.txt' },
+                    { input: 'dcoker run nginx', output: 'docker run nginx' },
+                ],
+            },
+            // Code block language tags
+            {
+                name: 'Code Block Tags',
+                description: 'Ensure code blocks have language tags',
+                pattern: /```\n(?!bash|python|javascript|typescript|java|go|rust|c|cpp|sh|ash|zsh|powershell|sql|html|css|json|yaml|xml|markdown)/gi,
+                replacement: '```bash\n',
+                examples: [
+                    { input: '```\necho hello', output: '```bash\necho hello' },
+                ],
+            },
+            // Common punctuation issues in commands
+            {
+                name: 'Command Punctuation',
+                description: 'Fix common punctuation issues in shell commands',
+                pattern: /(\w+)\s*,\s*(\w+)/g,
+                replacement: (match, word1, word2) => {
+                    // Only fix if it looks like a command chain (no space after comma)
+                    if (match.includes(', ')) {
+                        return match; // Keep natural language commas
+                    }
+                    return `${word1}, ${word2}`;
+                },
+                examples: [
+                    { input: 'git add,commit', output: 'git add, commit' },
+                ],
+            },
+            // Environment variable case fixes
+            {
+                name: 'Environment Variables',
+                description: 'Fix common environment variable names',
+                pattern: /\b(path|home|user|pwd|shell|term|lang)\b(?=\s*=|\s*:)/gi,
+                replacement: (match) => match.toUpperCase(),
+                examples: [
+                    { input: 'export path=/usr/bin', output: 'export PATH=/usr/bin' },
+                    { input: 'echo $home', output: 'echo $HOME' },
+                ],
+            },
+            // File extension fixes
+            {
+                name: 'File Extensions',
+                description: 'Fix common file extension typos',
+                pattern: /\.(txt|md|py|js|ts|java|go|rs|c|cpp|h|html|css|json|yaml|yml|xml|sh|bash)\s+/gi,
+                replacement: (match, ext) => {
+                    return `.${ext.toLowerCase()} `;
+                },
+                examples: [
+                    { input: 'file.TXT', output: 'file.txt' },
+                    { input: 'script.PY', output: 'script.py' },
+                ],
+            },
+            // Double spaces
+            {
+                name: 'Extra Spaces',
+                description: 'Remove duplicate spaces',
+                pattern: /  +/g,
+                replacement: ' ',
+                examples: [
+                    { input: 'command  with   spaces', output: 'command with spaces' },
+                ],
+            },
+            // Common LaTeX typos
+            {
+                name: 'LaTeX Symbols',
+                description: 'Fix common LaTeX symbol issues',
+                pattern: /\\(frac|sqrt|int|sum|lim|alpha|beta|gamma|theta|pi)\s*\{/g,
+                replacement: (match, cmd) => `\\${cmd}{`,
+                examples: [
+                    { input: '\\frac {1}{2}', output: '\\frac{1}{2}' },
+                ],
+            },
+        ];
+    }
+    /**
+     * Apply all quick fixes to text
+     */
+    applyFixes(text, enabledFixes) {
+        let fixedText = text;
+        const appliedFixes = [];
+        const changes = [];
+        const lines = text.split('\n');
+        const fixedLines = [...lines];
+        for (const fix of this.fixes) {
+            // Skip if this fix is not enabled
+            if (enabledFixes && !enabledFixes.includes(fix.name)) {
+                continue;
+            }
+            let count = 0;
+            // Apply fix line by line to track changes
+            for (let i = 0; i < fixedLines.length; i++) {
+                const lineBefore = fixedLines[i];
+                const lineAfter = lineBefore.replace(fix.pattern, fix.replacement);
+                if (lineBefore !== lineAfter) {
+                    fixedLines[i] = lineAfter;
+                    count++;
+                    changes.push({
+                        line: i + 1,
+                        before: lineBefore,
+                        after: lineAfter,
+                    });
+                }
+            }
+            if (count > 0) {
+                appliedFixes.push({ name: fix.name, count });
+            }
+        }
+        fixedText = fixedLines.join('\n');
+        return {
+            applied: fixedText !== text,
+            fixes: appliedFixes,
+            originalText: text,
+            fixedText,
+            changes,
+        };
+    }
+    /**
+     * Preview changes without applying
+     */
+    previewFixes(text, enabledFixes) {
+        return this.applyFixes(text, enabledFixes);
+    }
+    /**
+     * Get all available fixes
+     */
+    getAvailableFixes() {
+        return this.fixes;
+    }
+    /**
+     * Get fix by name
+     */
+    getFix(name) {
+        return this.fixes.find((f) => f.name === name);
+    }
+    /**
+     * Add custom fix
+     */
+    addCustomFix(fix) {
+        this.fixes.push(fix);
+    }
+    /**
+     * Generate summary of fixes
+     */
+    generateSummary(result) {
+        if (!result.applied) {
+            return 'No fixes needed - text looks good!';
+        }
+        const lines = [`Applied ${result.fixes.length} fix type(s):`];
+        for (const fix of result.fixes) {
+            lines.push(`  • ${fix.name}: ${fix.count} change(s)`);
+        }
+        return lines.join('\n');
+    }
+    /**
+     * Generate detailed diff
+     */
+    generateDiff(result) {
+        if (!result.applied) {
+            return 'No changes';
+        }
+        const lines = ['Changes:'];
+        for (const change of result.changes.slice(0, 10)) {
+            // Show max 10 changes
+            lines.push(`\nLine ${change.line}:`);
+            lines.push(`  - ${change.before}`);
+            lines.push(`  + ${change.after}`);
+        }
+        if (result.changes.length > 10) {
+            lines.push(`\n... and ${result.changes.length - 10} more changes`);
+        }
+        return lines.join('\n');
+    }
+}
+
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
+class LocalLLMService {
+    constructor(provider) {
+        this.defaultPromptTemplate = `You are a helpful assistant that refines transcribed text based on user instructions.
+
+Original transcription:
+{original}
+
+User instruction:
+{instruction}
+
+Please apply the requested changes to the transcription. Return ONLY the refined text without any explanations or preamble.
+
+Refined transcription:`;
+        this.provider = provider;
+    }
+    /**
+     * Refine text based on user instruction
+     */
+    refineWithInstruction(instruction) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const startTime = Date.now();
+            try {
+                const prompt = this.buildPrompt(instruction);
+                const response = yield this.callLLM(prompt);
+                return {
+                    success: true,
+                    refinedText: response.text,
+                    provider: this.provider.type,
+                    model: this.provider.model,
+                    tokensUsed: response.tokensUsed,
+                    duration: Date.now() - startTime,
+                };
+            }
+            catch (error) {
+                console.error('Local LLM refinement failed:', error);
+                return {
+                    success: false,
+                    refinedText: instruction.originalText,
+                    error: error instanceof Error ? error.message : 'Unknown error',
+                    provider: this.provider.type,
+                    model: this.provider.model,
+                    duration: Date.now() - startTime,
+                };
+            }
+        });
+    }
+    /**
+     * Build prompt from instruction
+     */
+    buildPrompt(instruction) {
+        return this.defaultPromptTemplate
+            .replace('{original}', instruction.originalText)
+            .replace('{instruction}', instruction.content);
+    }
+    /**
+     * Call the appropriate LLM provider
+     */
+    callLLM(prompt) {
+        return __awaiter(this, void 0, void 0, function* () {
+            switch (this.provider.type) {
+                case 'ollama':
+                    return yield this.callOllama(prompt);
+                case 'llamacpp':
+                    return yield this.callLlamaCpp(prompt);
+                case 'lmstudio':
+                    return yield this.callLMStudio(prompt);
+                case 'openai-compatible':
+                    return yield this.callOpenAICompatible(prompt);
+                case 'openai':
+                    return yield this.callOpenAI(prompt);
+                default:
+                    throw new Error(`Unsupported provider: ${this.provider.type}`);
+            }
+        });
+    }
+    /**
+     * Call Ollama API
+     * Docs: https://github.com/ollama/ollama/blob/main/docs/api.md
+     */
+    callOllama(prompt) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const response = yield fetch(`${this.provider.baseUrl}/api/generate`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    model: this.provider.model,
+                    prompt: prompt,
+                    stream: false,
+                }),
+            });
+            if (!response.ok) {
+                throw new Error(`Ollama API error: ${response.statusText}`);
+            }
+            const data = yield response.json();
+            return {
+                text: data.response || '',
+                tokensUsed: data.eval_count || undefined,
+            };
+        });
+    }
+    /**
+     * Call llama.cpp server
+     * Docs: https://github.com/ggerganov/llama.cpp/blob/master/examples/server/README.md
+     */
+    callLlamaCpp(prompt) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const response = yield fetch(`${this.provider.baseUrl}/completion`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    prompt: prompt,
+                    temperature: 0.3,
+                    top_k: 40,
+                    top_p: 0.9,
+                    n_predict: 2048,
+                    stop: ['\n\n\n'], // Stop on triple newline
+                }),
+            });
+            if (!response.ok) {
+                throw new Error(`llama.cpp API error: ${response.statusText}`);
+            }
+            const data = yield response.json();
+            return {
+                text: data.content || '',
+                tokensUsed: data.tokens_predicted || undefined,
+            };
+        });
+    }
+    /**
+     * Call LM Studio (OpenAI-compatible API)
+     * Docs: https://lmstudio.ai/docs/api/openai-api
+     */
+    callLMStudio(prompt) {
+        return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b, _c;
+            const response = yield fetch(`${this.provider.baseUrl}/v1/chat/completions`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    model: this.provider.model,
+                    messages: [
+                        {
+                            role: 'user',
+                            content: prompt,
+                        },
+                    ],
+                    temperature: 0.3,
+                    max_tokens: 2048,
+                }),
+            });
+            if (!response.ok) {
+                throw new Error(`LM Studio API error: ${response.statusText}`);
+            }
+            const data = yield response.json();
+            return {
+                text: ((_b = (_a = data.choices[0]) === null || _a === void 0 ? void 0 : _a.message) === null || _b === void 0 ? void 0 : _b.content) || '',
+                tokensUsed: ((_c = data.usage) === null || _c === void 0 ? void 0 : _c.total_tokens) || undefined,
+            };
+        });
+    }
+    /**
+     * Call OpenAI-compatible API (generic)
+     */
+    callOpenAICompatible(prompt) {
+        return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b, _c;
+            const headers = {
+                'Content-Type': 'application/json',
+            };
+            if (this.provider.apiKey) {
+                headers['Authorization'] = `Bearer ${this.provider.apiKey}`;
+            }
+            const response = yield fetch(`${this.provider.baseUrl}/v1/chat/completions`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                    model: this.provider.model,
+                    messages: [
+                        {
+                            role: 'user',
+                            content: prompt,
+                        },
+                    ],
+                    temperature: 0.3,
+                    max_tokens: 2048,
+                }),
+            });
+            if (!response.ok) {
+                throw new Error(`OpenAI-compatible API error: ${response.statusText}`);
+            }
+            const data = yield response.json();
+            return {
+                text: ((_b = (_a = data.choices[0]) === null || _a === void 0 ? void 0 : _a.message) === null || _b === void 0 ? void 0 : _b.content) || '',
+                tokensUsed: ((_c = data.usage) === null || _c === void 0 ? void 0 : _c.total_tokens) || undefined,
+            };
+        });
+    }
+    /**
+     * Call OpenAI API (fallback)
+     */
+    callOpenAI(prompt) {
+        return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b, _c;
+            if (!this.provider.apiKey) {
+                throw new Error('OpenAI API key required');
+            }
+            const response = yield fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${this.provider.apiKey}`,
+                },
+                body: JSON.stringify({
+                    model: this.provider.model || 'gpt-4-turbo',
+                    messages: [
+                        {
+                            role: 'user',
+                            content: prompt,
+                        },
+                    ],
+                    temperature: 0.3,
+                    max_tokens: 2048,
+                }),
+            });
+            if (!response.ok) {
+                throw new Error(`OpenAI API error: ${response.statusText}`);
+            }
+            const data = yield response.json();
+            return {
+                text: ((_b = (_a = data.choices[0]) === null || _a === void 0 ? void 0 : _a.message) === null || _b === void 0 ? void 0 : _b.content) || '',
+                tokensUsed: ((_c = data.usage) === null || _c === void 0 ? void 0 : _c.total_tokens) || undefined,
+            };
+        });
+    }
+    /**
+     * Test connection to LLM provider
+     */
+    testConnection() {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                const testPrompt = 'Hello! Please respond with "OK" to confirm the connection.';
+                const response = yield this.callLLM(testPrompt);
+                return {
+                    success: true,
+                    model: this.provider.model,
+                };
+            }
+            catch (error) {
+                return {
+                    success: false,
+                    error: error instanceof Error ? error.message : 'Unknown error',
+                };
+            }
+        });
+    }
+    /**
+     * List available models (Ollama only)
+     */
+    listModels() {
+        return __awaiter(this, void 0, void 0, function* () {
+            var _a;
+            if (this.provider.type !== 'ollama') {
+                throw new Error('Model listing only supported for Ollama');
+            }
+            try {
+                const response = yield fetch(`${this.provider.baseUrl}/api/tags`);
+                if (!response.ok) {
+                    throw new Error(`Failed to list models: ${response.statusText}`);
+                }
+                const data = yield response.json();
+                return ((_a = data.models) === null || _a === void 0 ? void 0 : _a.map((m) => m.name)) || [];
+            }
+            catch (error) {
+                console.error('Failed to list Ollama models:', error);
+                return [];
+            }
+        });
+    }
+    /**
+     * Update provider settings
+     */
+    updateProvider(provider) {
+        this.provider = Object.assign(Object.assign({}, this.provider), provider);
+    }
+    /**
+     * Get current provider info
+     */
+    getProvider() {
+        return Object.assign({}, this.provider);
+    }
+    /**
+     * Set custom prompt template
+     */
+    setPromptTemplate(template) {
+        this.defaultPromptTemplate = template;
+    }
+}
+
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
 class RecordModal extends obsidian.Modal {
-    constructor(app, recorderService, whisperService, llmRefineService, vaultOps, toast, plugin, contextLinkService, vaultRAGService, mcpClientService, audioFileService, savedAudioFile) {
+    constructor(app, recorderService, whisperService, llmRefineService, vaultOps, toast, plugin, contextLinkService, vaultRAGService, mcpClientService, audioFileService, qaSessionService, transcriptFormatter, correctionDb, unifiedRefinement, savedAudioFile) {
         super(app);
         this.plugin = plugin;
         this.contextLinkService = contextLinkService;
@@ -23348,6 +24167,14 @@ class RecordModal extends obsidian.Modal {
         };
         this.savedAudioFile = null;
         this.audioPlayer = null;
+        // Q&A Session properties
+        this.isQAMode = false;
+        this.qaSessionService = null;
+        this.currentAudioBlob = null;
+        this.qaAudioFile = null; // Saved audio file for Q&A sessions
+        this.localLLMService = null;
+        this.editableTranscript = null;
+        this.rawTranscript = ''; // Store raw Whisper output
         this.recorderService = recorderService;
         this.whisperService = whisperService;
         this.llmRefineService = llmRefineService;
@@ -23356,7 +24183,23 @@ class RecordModal extends obsidian.Modal {
         this.audioFileService = audioFileService;
         this.vaultOps = vaultOps;
         this.toast = toast;
+        this.qaSessionService = qaSessionService;
+        this.transcriptFormatter = transcriptFormatter;
+        this.correctionDb = correctionDb;
+        this.unifiedRefinement = unifiedRefinement;
         this.savedAudioFile = savedAudioFile || null;
+        // Initialize refinement services
+        this.quickFixService = new QuickFixService();
+        // Initialize local LLM if enabled
+        if (this.pluginSettings().enableLocalLLM) {
+            const provider = {
+                type: this.pluginSettings().localLLMProvider,
+                baseUrl: this.pluginSettings().localLLMBaseUrl,
+                model: this.pluginSettings().localLLMModel,
+                apiKey: this.pluginSettings().localLLMApiKey || undefined,
+            };
+            this.localLLMService = new LocalLLMService(provider);
+        }
     }
     onOpen() {
         // If opening with existing audio file (drag-and-drop scenario),
@@ -23461,6 +24304,14 @@ class RecordModal extends obsidian.Modal {
         return __awaiter(this, void 0, void 0, function* () {
             var _a, _b, _c;
             try {
+                // Store audio blob for potential Q&A processing
+                this.currentAudioBlob = audioChunk.blob;
+                // If Q&A mode is enabled, handle differently
+                if (this.isQAMode && this.qaSessionService) {
+                    yield this.handleQASession(audioChunk);
+                    return;
+                }
+                // Standard transcription flow
                 const fileSizeMB = (audioChunk.blob.size / (1024 * 1024)).toFixed(1);
                 const durationSec = Math.floor(audioChunk.duration / 1000);
                 this.statusEl.textContent = `Transcribing audio (${fileSizeMB} MB, ~${durationSec}s)...`;
@@ -23469,13 +24320,23 @@ class RecordModal extends obsidian.Modal {
                 }
                 (_a = this.statusBar()) === null || _a === void 0 ? void 0 : _a.setState('processing', 'Processing…');
                 const transcription = yield this.whisperService.transcribe(audioChunk);
+                // STORE RAW TRANSCRIPT (before any processing)
+                this.rawTranscript = transcription.text;
+                // Apply auto-corrections from learned patterns (if enabled)
+                let correctedText = transcription.text;
+                if (this.pluginSettings().enableCorrectionLearning) {
+                    this.statusEl.textContent = 'Applying learned corrections...';
+                    const autoCorrection = this.correctionDb.applyAutoCorrections(transcription.text);
+                    if (autoCorrection.applied.length > 0) {
+                        correctedText = autoCorrection.text;
+                        this.toast.info(`Applied ${autoCorrection.applied.length} learned correction(s)`);
+                    }
+                }
                 // Process voice commands (convert "zeddal link word" to [[word]])
-                const processedText = VoiceCommandProcessor.process(transcription.text);
+                const processedText = VoiceCommandProcessor.process(correctedText);
                 const resolvedText = yield LinkResolver.resolveExistingNotes(processedText, this.vaultOps, { autoLinkFirstMatch: true });
-                const contextLinked = this.pluginSettings().autoContextLinks
-                    ? yield this.contextLinkService.applyContextLinks(resolvedText)
-                    : { text: resolvedText, matches: 0 };
-                this.currentTranscription = contextLinked.text;
+                // Set as current transcription (editable by user)
+                this.currentTranscription = resolvedText;
                 this.linkCount = this.countLinks(this.currentTranscription);
                 (_b = this.statusBar()) === null || _b === void 0 ? void 0 : _b.setLinkCount(this.linkCount);
                 console.log('Transcription result:', transcription);
@@ -23493,19 +24354,65 @@ class RecordModal extends obsidian.Modal {
                         this.statusEl.style.color = 'var(--text-accent)';
                     }
                 }
-                // Show the transcription text in the modal
+                // Show the transcription text in an EDITABLE textarea (Tier 1)
                 const resultContainer = this.contentEl.createDiv('zeddal-result');
-                resultContainer.createEl('h3', { text: 'Transcription:' });
-                const textEl = resultContainer.createEl('p', {
+                resultContainer.createEl('h3', { text: 'Transcription (editable):' });
+                this.editableTranscript = resultContainer.createEl('textarea', {
                     text: this.currentTranscription || transcription.text || '(no speech detected)',
                     cls: 'zeddal-transcription-text'
                 });
-                textEl.style.whiteSpace = 'pre-wrap';
-                textEl.style.padding = '12px';
-                textEl.style.backgroundColor = 'var(--background-secondary)';
-                textEl.style.borderRadius = '6px';
-                textEl.style.marginTop = '12px';
+                this.editableTranscript.style.width = '100%';
+                this.editableTranscript.style.minHeight = '200px';
+                this.editableTranscript.style.whiteSpace = 'pre-wrap';
+                this.editableTranscript.style.padding = '12px';
+                this.editableTranscript.style.backgroundColor = 'var(--background-secondary)';
+                this.editableTranscript.style.borderRadius = '6px';
+                this.editableTranscript.style.marginTop = '12px';
+                this.editableTranscript.style.border = '1px solid var(--background-modifier-border)';
+                this.editableTranscript.style.color = 'var(--text-normal)';
+                this.editableTranscript.style.fontFamily = 'var(--font-monospace)';
+                this.editableTranscript.style.fontSize = '14px';
+                this.editableTranscript.style.resize = 'vertical';
+                // Update currentTranscription when user edits
+                this.editableTranscript.addEventListener('input', () => {
+                    var _a;
+                    this.currentTranscription = this.editableTranscript.value;
+                    this.linkCount = this.countLinks(this.currentTranscription);
+                    (_a = this.statusBar()) === null || _a === void 0 ? void 0 : _a.setLinkCount(this.linkCount);
+                });
                 this.renderLinkSummary(resultContainer, this.linkCount, 'Links detected');
+                // Add refinement buttons (Tier 2 & 3)
+                if (this.pluginSettings().enableQuickFixes || this.pluginSettings().enableLocalLLM) {
+                    const refinementContainer = resultContainer.createDiv('zeddal-refinement-tools');
+                    refinementContainer.style.marginTop = '12px';
+                    refinementContainer.style.display = 'flex';
+                    refinementContainer.style.gap = '8px';
+                    refinementContainer.style.flexWrap = 'wrap';
+                    // Reformat button (re-run technical formatter)
+                    if (this.pluginSettings().formatTechnicalContent) {
+                        const reformatBtn = refinementContainer.createEl('button', {
+                            text: '🔄 Reformat',
+                            cls: 'mod-cta'
+                        });
+                        reformatBtn.onclick = () => this.reformatTranscription();
+                    }
+                    // Quick Fix button (Tier 2)
+                    if (this.pluginSettings().enableQuickFixes) {
+                        const quickFixBtn = refinementContainer.createEl('button', {
+                            text: '⚡ Quick Fix',
+                            cls: 'mod-cta'
+                        });
+                        quickFixBtn.onclick = () => this.applyQuickFixes();
+                    }
+                    // AI Refinement button (Tier 3)
+                    if (this.pluginSettings().enableLocalLLM || this.pluginSettings().openaiApiKey) {
+                        const aiRefineBtn = refinementContainer.createEl('button', {
+                            text: '✨ Refine with AI',
+                            cls: 'mod-cta'
+                        });
+                        aiRefineBtn.onclick = () => this.showAIRefinementModal();
+                    }
+                }
                 // Replace the control buttons with new actions (only if they exist from recording UI)
                 if (this.pauseBtn) {
                     this.pauseBtn.style.display = 'none';
@@ -23579,6 +24486,7 @@ class RecordModal extends obsidian.Modal {
      */
     showSaveOptions(refine) {
         return __awaiter(this, void 0, void 0, function* () {
+            var _a;
             // Clear existing UI
             this.contentEl.empty();
             this.contentEl.addClass('zeddal-save-modal');
@@ -23644,22 +24552,31 @@ class RecordModal extends obsidian.Modal {
                 }
                 // Combine RAG and MCP context
                 const combinedContext = [...ragContext, ...mcpContext];
-                this.statusEl.textContent = '✨ Refining with GPT-4 (Step 1/2: Analyzing)...';
+                this.statusEl.textContent = '✨ Refining with GPT-4 (unified processing)...';
                 try {
-                    // Show progress during refinement
-                    setTimeout(() => {
-                        if (this.statusEl) {
-                            this.statusEl.textContent = '✨ Refining with GPT-4 (Step 2/2: Generating)...';
-                        }
-                    }, 1500);
-                    const refined = yield this.llmRefineService.refine(this.currentTranscription, combinedContext);
+                    // Use unified refinement service (single GPT call for everything)
+                    const userCorrectedText = this.rawTranscript !== this.currentTranscription
+                        ? this.currentTranscription
+                        : undefined;
+                    const refined = yield this.unifiedRefinement.refine({
+                        rawTranscript: this.rawTranscript,
+                        userCorrectedText: userCorrectedText,
+                        ragContext: combinedContext,
+                        technicalDomain: this.pluginSettings().technicalDomain,
+                        includeAudioLink: this.pluginSettings().autoSaveRaw,
+                        audioFilePath: (_a = this.savedAudioFile) === null || _a === void 0 ? void 0 : _a.filePath,
+                    });
+                    // Resolve any remaining wikilinks
                     noteToSave = yield LinkResolver.resolveExistingNotes(refined.body, this.vaultOps, {
                         autoLinkFirstMatch: true,
                     });
                     noteTitle = refined.title;
                     const wordCount = noteToSave.split(/\s+/).length;
                     const contextSummary = `${ragContext.length} RAG + ${mcpContext.length} MCP chunks`;
-                    this.statusEl.textContent = `✓ Refinement complete (${wordCount} words, ${contextSummary} used)`;
+                    const learningSummary = refined.detectedCorrections
+                        ? `, learned ${refined.detectedCorrections.length} pattern(s)`
+                        : '';
+                    this.statusEl.textContent = `✓ Refinement complete (${wordCount} words, ${contextSummary} used${learningSummary})`;
                     this.statusEl.style.color = 'var(--text-accent)';
                     // Show refined result
                     const refinedContainer = this.contentEl.createDiv('zeddal-refined-result');
@@ -24007,6 +24924,45 @@ class RecordModal extends obsidian.Modal {
         contentEl.addClass('zeddal-record-modal');
         const title = contentEl.createEl('h2', { text: 'Zeddal Recording' });
         title.addClass('zeddal-modal-title');
+        // Q&A Mode Toggle (if enabled in settings)
+        if (this.plugin.settings.enableQAMode && this.qaSessionService) {
+            const modeToggleContainer = contentEl.createDiv('zeddal-mode-toggle');
+            modeToggleContainer.style.display = 'flex';
+            modeToggleContainer.style.gap = '8px';
+            modeToggleContainer.style.marginBottom = '16px';
+            modeToggleContainer.style.justifyContent = 'center';
+            const standardBtn = modeToggleContainer.createEl('button', {
+                text: 'Standard',
+                cls: !this.isQAMode ? 'mod-cta' : '',
+            });
+            standardBtn.style.flex = '1';
+            standardBtn.onclick = () => {
+                this.isQAMode = false;
+                standardBtn.classList.add('mod-cta');
+                qaBtn.classList.remove('mod-cta');
+            };
+            const qaBtn = modeToggleContainer.createEl('button', {
+                text: 'Q&A Session',
+                cls: this.isQAMode ? 'mod-cta' : '',
+            });
+            qaBtn.style.flex = '1';
+            qaBtn.onclick = () => {
+                this.isQAMode = true;
+                qaBtn.classList.add('mod-cta');
+                standardBtn.classList.remove('mod-cta');
+            };
+            // Q&A mode indicator
+            if (this.isQAMode) {
+                const indicator = contentEl.createDiv('zeddal-qa-indicator');
+                indicator.textContent = '👥 Q&A Mode: Multi-speaker detection enabled';
+                indicator.style.padding = '8px';
+                indicator.style.backgroundColor = 'var(--background-secondary)';
+                indicator.style.borderRadius = '4px';
+                indicator.style.marginBottom = '12px';
+                indicator.style.textAlign = 'center';
+                indicator.style.fontSize = '13px';
+            }
+        }
         this.statusEl = contentEl.createDiv('zeddal-status');
         this.statusEl.innerHTML = '<span class="zeddal-recording-pulse"></span> Recording...';
         this.createEqualizer(contentEl);
@@ -24228,6 +25184,590 @@ class RecordModal extends obsidian.Modal {
         const snippet = sentence.substring(0, 60).trim();
         return snippet || `Voice Note ${new Date().toLocaleDateString()}`;
     }
+    /**
+     * Handle Q&A session processing
+     */
+    handleQASession(audioChunk) {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (!this.qaSessionService) {
+                this.toast.error('Q&A service not initialized');
+                this.close();
+                return;
+            }
+            try {
+                const fileSizeMB = (audioChunk.blob.size / (1024 * 1024)).toFixed(1);
+                const durationSec = Math.floor(audioChunk.duration / 1000);
+                // Save raw audio FIRST before any processing
+                this.statusEl.textContent = `Saving raw audio (${fileSizeMB} MB)...`;
+                this.qaAudioFile = yield this.audioFileService.saveRecording(audioChunk);
+                this.toast.success('✓ Raw audio saved');
+                // Now proceed with Q&A processing
+                this.statusEl.textContent = `Processing Q&A session (${fileSizeMB} MB, ~${durationSec}s)...`;
+                // Prompt for speaker labels if enabled
+                const promptForLabels = this.plugin.settings.promptForLabels !== false;
+                if (promptForLabels) {
+                    const modal = new SpeakerLabelModal(this.app, (speakers) => __awaiter(this, void 0, void 0, function* () {
+                        yield this.processQAWithSpeakers(audioChunk.blob, speakers);
+                    }), this.plugin.settings.defaultLecturerLabel);
+                    modal.open();
+                }
+                else {
+                    // Let AI infer speakers
+                    yield this.processQAWithSpeakers(audioChunk.blob, []);
+                }
+            }
+            catch (error) {
+                console.error('Failed to save raw audio:', error);
+                this.toast.error(`Failed to save audio: ${error.message}`);
+                this.close();
+            }
+        });
+    }
+    /**
+     * Process Q&A session with speaker labels
+     */
+    processQAWithSpeakers(audioBlob, speakers) {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (!this.qaSessionService)
+                return;
+            try {
+                // Step 1: Transcription
+                this.statusEl.textContent = '🎤 Transcribing audio... (Step 1/3)';
+                // Get context query from active note or user prompt
+                const contextQuery = 'Q&A session context'; // Could be enhanced to prompt user
+                // Start transcription - we'll update progress as we go
+                const sessionPromise = this.qaSessionService.processQASession(audioBlob, speakers.length > 0 ? speakers : undefined, contextQuery);
+                // Simulate progress updates (since we can't directly monitor QASessionService)
+                // In a production version, we'd emit events from QASessionService
+                const progressInterval = setInterval(() => {
+                    const currentText = this.statusEl.textContent;
+                    if (currentText.includes('Step 1')) {
+                        this.statusEl.textContent = '🧠 Analyzing speakers... (Step 2/3)';
+                    }
+                    else if (currentText.includes('Step 2')) {
+                        this.statusEl.textContent = '📚 Retrieving context & structuring... (Step 3/3)';
+                    }
+                }, 15000); // Update every 15 seconds
+                const session = yield sessionPromise;
+                clearInterval(progressInterval);
+                this.statusEl.textContent = '✓ Q&A session processed successfully';
+                // Show preview and save
+                yield this.showQAPreviewAndSave(session);
+            }
+            catch (error) {
+                console.error('Failed to process Q&A session:', error);
+                this.toast.error(`Q&A processing failed: ${error.message}`);
+                this.close();
+            }
+        });
+    }
+    /**
+     * Show Q&A session preview and save options
+     */
+    showQAPreviewAndSave(session) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const { contentEl } = this;
+            contentEl.empty();
+            contentEl.addClass('zeddal-qa-preview');
+            const title = contentEl.createEl('h2', { text: 'Q&A Session Processed' });
+            title.style.color = 'var(--text-accent)';
+            // Session summary
+            const summary = contentEl.createDiv('zeddal-qa-summary');
+            summary.style.padding = '12px';
+            summary.style.backgroundColor = 'var(--background-secondary)';
+            summary.style.borderRadius = '6px';
+            summary.style.marginBottom = '16px';
+            summary.createEl('p', {
+                text: `📊 ${session.pairs.length} questions answered`
+            });
+            summary.createEl('p', {
+                text: `👥 Participants: ${session.participants.map(p => p.label).join(', ')}`
+            });
+            if (session.metadata.totalFollowUps > 0) {
+                summary.createEl('p', {
+                    text: `💬 ${session.metadata.totalFollowUps} follow-up questions`
+                });
+            }
+            // Audio file information (if saved)
+            if (this.qaAudioFile) {
+                const audioInfo = contentEl.createDiv('zeddal-audio-info');
+                audioInfo.style.padding = '12px';
+                audioInfo.style.backgroundColor = 'var(--background-secondary)';
+                audioInfo.style.borderRadius = '6px';
+                audioInfo.style.marginBottom = '16px';
+                const sizeInMB = (this.qaAudioFile.size / (1024 * 1024)).toFixed(2);
+                const durationMin = Math.floor(this.qaAudioFile.duration / 60000);
+                const durationSec = Math.floor((this.qaAudioFile.duration % 60000) / 1000);
+                audioInfo.createEl('p', {
+                    text: `🎤 Raw Audio: ${sizeInMB} MB (${durationMin}:${durationSec.toString().padStart(2, '0')})`
+                });
+                // Checkbox for keeping raw audio
+                const checkboxContainer = audioInfo.createDiv();
+                checkboxContainer.style.marginTop = '8px';
+                const checkbox = checkboxContainer.createEl('input', { type: 'checkbox' });
+                checkbox.checked = true; // Default: keep audio
+                checkbox.id = 'keep-audio-checkbox';
+                checkboxContainer.createEl('label', {
+                    text: ' Save raw audio recording',
+                    attr: { for: 'keep-audio-checkbox' }
+                });
+                checkboxContainer.querySelector('label').style.marginLeft = '8px';
+                checkboxContainer.querySelector('label').style.cursor = 'pointer';
+            }
+            // Preview first Q&A pair
+            if (session.pairs.length > 0) {
+                const preview = contentEl.createDiv('zeddal-qa-preview-content');
+                preview.style.maxHeight = '300px';
+                preview.style.overflow = 'auto';
+                preview.style.padding = '12px';
+                preview.style.backgroundColor = 'var(--background-primary)';
+                preview.style.borderRadius = '6px';
+                preview.style.marginBottom = '16px';
+                const firstPair = session.pairs[0];
+                preview.createEl('h4', { text: `Query 1: ${firstPair.summary.substring(0, 50)}...` });
+                preview.createEl('p', {
+                    text: `Q: ${firstPair.question.text.substring(0, 100)}...`
+                });
+                preview.createEl('p', {
+                    text: `A: ${firstPair.answer.text.substring(0, 100)}...`
+                });
+                if (session.pairs.length > 1) {
+                    preview.createEl('p', {
+                        text: `... and ${session.pairs.length - 1} more questions`,
+                        cls: 'zeddal-more-indicator'
+                    });
+                }
+            }
+            // Save button
+            const saveBtn = contentEl.createEl('button', {
+                text: 'Save Q&A Session',
+                cls: 'mod-cta'
+            });
+            saveBtn.style.width = '100%';
+            saveBtn.style.marginBottom = '8px';
+            saveBtn.onclick = () => __awaiter(this, void 0, void 0, function* () {
+                var _a, _b;
+                // Check if user wants to keep audio
+                const keepAudio = this.qaAudioFile
+                    ? (_b = (_a = contentEl.querySelector('#keep-audio-checkbox')) === null || _a === void 0 ? void 0 : _a.checked) !== null && _b !== void 0 ? _b : true
+                    : false;
+                yield this.saveQASession(session, keepAudio);
+            });
+            // Cancel button
+            const cancelBtn = contentEl.createEl('button', {
+                text: 'Cancel'
+            });
+            cancelBtn.style.width = '100%';
+            cancelBtn.onclick = () => this.close();
+        });
+    }
+    /**
+     * Save Q&A session to vault
+     */
+    saveQASession(session_1) {
+        return __awaiter(this, arguments, void 0, function* (session, keepAudio = true) {
+            try {
+                this.statusEl.textContent = 'Saving Q&A session...';
+                // Get export options from settings
+                const options = {
+                    format: this.plugin.settings.qaExportFormat || 'both',
+                    includeTimestamps: true,
+                    includeAudioLinks: keepAudio && Boolean(this.qaAudioFile),
+                    includeSummaries: this.plugin.settings.autoSummarize !== false,
+                    includeRelatedTopics: true,
+                    saveJsonCopy: this.plugin.settings.qaExportFormat === 'both',
+                };
+                // Add audio file to session metadata if keeping it
+                if (keepAudio && this.qaAudioFile) {
+                    session.metadata.recordingFile = this.qaAudioFile.filePath;
+                }
+                // Export session
+                const exported = exportQASession(session, options);
+                // Determine save folder
+                const folder = this.plugin.settings.qaSaveFolder || 'Voice Notes/Q&A Sessions';
+                // Create folder if it doesn't exist
+                const folderPath = folder.split('/');
+                let currentPath = '';
+                for (const part of folderPath) {
+                    currentPath = currentPath ? `${currentPath}/${part}` : part;
+                    try {
+                        yield this.app.vault.createFolder(currentPath);
+                    }
+                    catch (e) {
+                        // Folder already exists, that's fine
+                    }
+                }
+                // Generate filename with auto-increment if exists
+                const date = new Date(session.date).toISOString().split('T')[0];
+                const sanitized = session.title.replace(/[<>:"/\\|?*]/g, '-');
+                const baseFilename = `${date} ${sanitized}`;
+                // Find available filename (handle duplicates)
+                const availableFilename = yield this.getAvailableFilename(folder, baseFilename, 'md');
+                // Save markdown
+                if (exported.markdown) {
+                    const mdPath = `${folder}/${availableFilename}.md`;
+                    yield this.vaultOps.create(mdPath, exported.markdown);
+                }
+                // Save JSON if configured
+                if (exported.json && options.saveJsonCopy) {
+                    const jsonPath = `${folder}/${availableFilename}.json`;
+                    yield this.vaultOps.create(jsonPath, exported.json);
+                }
+                // Delete audio file if user chose not to keep it
+                if (!keepAudio && this.qaAudioFile) {
+                    try {
+                        yield this.app.vault.adapter.remove(this.qaAudioFile.filePath);
+                        // Also delete metadata if exists
+                        const metadataPath = this.qaAudioFile.filePath.replace(/\.(webm|mp3|wav|m4a|ogg)$/, '.metadata.json');
+                        if (yield this.app.vault.adapter.exists(metadataPath)) {
+                            yield this.app.vault.adapter.remove(metadataPath);
+                        }
+                        this.toast.success('✓ Q&A session saved (audio discarded)');
+                    }
+                    catch (error) {
+                        console.warn('Failed to delete audio file:', error);
+                    }
+                }
+                else {
+                    this.toast.success(`✓ Q&A session saved to ${folder}/`);
+                }
+                this.close();
+            }
+            catch (error) {
+                console.error('Failed to save Q&A session:', error);
+                this.toast.error(`Failed to save: ${error.message}`);
+            }
+        });
+    }
+    /**
+     * Get available filename with auto-increment for duplicates
+     */
+    getAvailableFilename(folder, baseFilename, extension) {
+        return __awaiter(this, void 0, void 0, function* () {
+            let filename = baseFilename;
+            let counter = 1;
+            while (yield this.app.vault.adapter.exists(`${folder}/${filename}.${extension}`)) {
+                filename = `${baseFilename} (${counter})`;
+                counter++;
+            }
+            return filename;
+        });
+    }
+    /**
+     * Reformat transcription with technical formatter
+     */
+    reformatTranscription() {
+        return __awaiter(this, void 0, void 0, function* () {
+            var _a;
+            if (!this.editableTranscript)
+                return;
+            const originalText = this.editableTranscript.value;
+            try {
+                this.toast.info('Reformatting...');
+                const formattedText = yield this.transcriptFormatter.formatTechnicalContent(originalText, this.pluginSettings().technicalDomain);
+                this.editableTranscript.value = formattedText;
+                this.currentTranscription = formattedText;
+                this.linkCount = this.countLinks(formattedText);
+                (_a = this.statusBar()) === null || _a === void 0 ? void 0 : _a.setLinkCount(this.linkCount);
+                this.toast.success('✓ Reformatted successfully');
+            }
+            catch (error) {
+                console.error('Reformatting failed:', error);
+                this.toast.error('Reformatting failed');
+            }
+        });
+    }
+    /**
+     * Apply quick fixes with preview (Tier 2)
+     */
+    applyQuickFixes() {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (!this.editableTranscript)
+                return;
+            const originalText = this.editableTranscript.value;
+            try {
+                // Preview fixes
+                const result = this.quickFixService.previewFixes(originalText);
+                if (!result.applied) {
+                    this.toast.info('No fixes needed - text looks good!');
+                    return;
+                }
+                // Show preview modal
+                const modal = new obsidian.Modal(this.app);
+                modal.titleEl.setText('Quick Fix Preview');
+                const { contentEl } = modal;
+                contentEl.createEl('p', {
+                    text: this.quickFixService.generateSummary(result),
+                    cls: 'zeddal-fix-summary'
+                });
+                // Show diff
+                const diffContainer = contentEl.createDiv('zeddal-diff-container');
+                diffContainer.style.maxHeight = '400px';
+                diffContainer.style.overflow = 'auto';
+                diffContainer.style.padding = '12px';
+                diffContainer.style.backgroundColor = 'var(--background-secondary)';
+                diffContainer.style.borderRadius = '6px';
+                diffContainer.style.marginTop = '12px';
+                diffContainer.style.fontFamily = 'var(--font-monospace)';
+                diffContainer.style.fontSize = '13px';
+                const diffText = diffContainer.createEl('pre', {
+                    text: this.quickFixService.generateDiff(result)
+                });
+                diffText.style.whiteSpace = 'pre-wrap';
+                diffText.style.margin = '0';
+                // Buttons
+                const buttonContainer = contentEl.createDiv('zeddal-modal-buttons');
+                buttonContainer.style.display = 'flex';
+                buttonContainer.style.gap = '8px';
+                buttonContainer.style.marginTop = '16px';
+                const applyBtn = buttonContainer.createEl('button', {
+                    text: 'Apply Fixes',
+                    cls: 'mod-cta'
+                });
+                applyBtn.onclick = () => {
+                    var _a;
+                    this.editableTranscript.value = result.fixedText;
+                    this.currentTranscription = result.fixedText;
+                    this.linkCount = this.countLinks(result.fixedText);
+                    (_a = this.statusBar()) === null || _a === void 0 ? void 0 : _a.setLinkCount(this.linkCount);
+                    this.toast.success(`✓ Applied ${result.fixes.length} fix type(s)`);
+                    modal.close();
+                };
+                const cancelBtn = buttonContainer.createEl('button', {
+                    text: 'Cancel'
+                });
+                cancelBtn.onclick = () => modal.close();
+                modal.open();
+            }
+            catch (error) {
+                console.error('Quick fixes failed:', error);
+                this.toast.error('Quick fixes failed');
+            }
+        });
+    }
+    /**
+     * Show AI refinement modal with voice/text input (Tier 3)
+     */
+    showAIRefinementModal() {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (!this.editableTranscript)
+                return;
+            const modal = new obsidian.Modal(this.app);
+            modal.titleEl.setText('AI Refinement');
+            const { contentEl } = modal;
+            // Provider selection
+            const providerInfo = contentEl.createDiv('zeddal-provider-info');
+            providerInfo.style.padding = '12px';
+            providerInfo.style.backgroundColor = 'var(--background-secondary)';
+            providerInfo.style.borderRadius = '6px';
+            providerInfo.style.marginBottom = '16px';
+            if (this.localLLMService && this.pluginSettings().enableLocalLLM) {
+                const provider = this.localLLMService.getProvider();
+                providerInfo.createEl('p', {
+                    text: `🖥️ Using: ${provider.type} (${provider.model})`
+                });
+                providerInfo.createEl('p', {
+                    text: `URL: ${provider.baseUrl}`,
+                    cls: 'zeddal-provider-url'
+                });
+            }
+            else if (this.pluginSettings().openaiApiKey) {
+                providerInfo.createEl('p', {
+                    text: `☁️ Using: OpenAI (${this.pluginSettings().gptModel || 'gpt-4-turbo'})`
+                });
+                providerInfo.createEl('p', {
+                    text: 'Note: This will use your OpenAI API key',
+                    cls: 'zeddal-provider-note'
+                });
+            }
+            else {
+                providerInfo.createEl('p', {
+                    text: '⚠️ No AI provider configured. Enable local LLM or add OpenAI API key in settings.',
+                    cls: 'zeddal-provider-warning'
+                });
+                const closeBtn = contentEl.createEl('button', {
+                    text: 'Close',
+                    cls: 'mod-cta'
+                });
+                closeBtn.onclick = () => modal.close();
+                modal.open();
+                return;
+            }
+            // Instruction input
+            contentEl.createEl('h4', { text: 'Refinement Instructions:' });
+            const instructionInput = contentEl.createEl('textarea');
+            instructionInput.placeholder = 'E.g., "Fix capitalization in file paths", "Add proper punctuation", "Correct command flags"';
+            instructionInput.style.width = '100%';
+            instructionInput.style.minHeight = '80px';
+            instructionInput.style.padding = '8px';
+            instructionInput.style.border = '1px solid var(--background-modifier-border)';
+            instructionInput.style.borderRadius = '4px';
+            instructionInput.style.backgroundColor = 'var(--background-primary)';
+            instructionInput.style.color = 'var(--text-normal)';
+            instructionInput.style.fontFamily = 'var(--font-text)';
+            instructionInput.style.fontSize = '14px';
+            instructionInput.style.marginBottom = '16px';
+            instructionInput.style.resize = 'vertical';
+            // Buttons
+            const buttonContainer = contentEl.createDiv('zeddal-modal-buttons');
+            buttonContainer.style.display = 'flex';
+            buttonContainer.style.gap = '8px';
+            // Voice instruction button
+            const voiceBtn = buttonContainer.createEl('button', {
+                text: '🎤 Record Instruction',
+                cls: 'mod-cta'
+            });
+            voiceBtn.onclick = () => __awaiter(this, void 0, void 0, function* () {
+                this.toast.info('Recording voice instruction...');
+                try {
+                    // Start recording for voice instruction
+                    yield this.recorderService.start();
+                    voiceBtn.textContent = '⏹️ Stop Recording';
+                    voiceBtn.onclick = () => __awaiter(this, void 0, void 0, function* () {
+                        this.recorderService.stop();
+                        voiceBtn.textContent = 'Processing...';
+                        voiceBtn.disabled = true;
+                        // Wait for recording-stopped event
+                        const handleRecording = (event) => __awaiter(this, void 0, void 0, function* () {
+                            const { audioChunk } = event.data;
+                            // Transcribe voice instruction
+                            const transcription = yield this.whisperService.transcribe(audioChunk);
+                            instructionInput.value = transcription.text;
+                            this.toast.success('Voice instruction captured');
+                            voiceBtn.textContent = '🎤 Record Instruction';
+                            voiceBtn.disabled = false;
+                            // Remove listener
+                            eventBus.off('recording-stopped', handleRecording);
+                        });
+                        eventBus.on('recording-stopped', handleRecording);
+                    });
+                }
+                catch (error) {
+                    console.error('Voice recording failed:', error);
+                    this.toast.error('Failed to record voice instruction');
+                }
+            });
+            // Apply refinement button
+            const applyBtn = buttonContainer.createEl('button', {
+                text: '✨ Apply Refinement',
+                cls: 'mod-cta'
+            });
+            applyBtn.onclick = () => __awaiter(this, void 0, void 0, function* () {
+                var _a;
+                const instruction = instructionInput.value.trim();
+                if (!instruction) {
+                    this.toast.error('Please provide refinement instructions');
+                    return;
+                }
+                applyBtn.textContent = 'Refining...';
+                applyBtn.disabled = true;
+                try {
+                    const refinementInstruction = {
+                        type: 'text',
+                        content: instruction,
+                        originalText: this.editableTranscript.value,
+                    };
+                    let result;
+                    if (this.localLLMService && this.pluginSettings().enableLocalLLM) {
+                        result = yield this.localLLMService.refineWithInstruction(refinementInstruction);
+                    }
+                    else {
+                        // Fallback to OpenAI
+                        result = yield this.refineWithOpenAI(refinementInstruction);
+                    }
+                    if (result.success) {
+                        this.editableTranscript.value = result.refinedText;
+                        this.currentTranscription = result.refinedText;
+                        this.linkCount = this.countLinks(result.refinedText);
+                        (_a = this.statusBar()) === null || _a === void 0 ? void 0 : _a.setLinkCount(this.linkCount);
+                        const duration = result.duration ? `${(result.duration / 1000).toFixed(1)}s` : '';
+                        this.toast.success(`✓ Refined successfully ${duration}`);
+                        modal.close();
+                    }
+                    else {
+                        this.toast.error(`Refinement failed: ${result.error || 'Unknown error'}`);
+                    }
+                }
+                catch (error) {
+                    console.error('AI refinement failed:', error);
+                    this.toast.error('AI refinement failed');
+                }
+                finally {
+                    applyBtn.textContent = '✨ Apply Refinement';
+                    applyBtn.disabled = false;
+                }
+            });
+            const cancelBtn = buttonContainer.createEl('button', {
+                text: 'Cancel'
+            });
+            cancelBtn.onclick = () => modal.close();
+            modal.open();
+            instructionInput.focus();
+        });
+    }
+    /**
+     * Refine with OpenAI (fallback when local LLM not available)
+     */
+    refineWithOpenAI(instruction) {
+        return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b, _c;
+            const prompt = `You are a helpful assistant that refines transcribed text based on user instructions.
+
+Original transcription:
+${instruction.originalText}
+
+User instruction:
+${instruction.content}
+
+Please apply the requested changes to the transcription. Return ONLY the refined text without any explanations or preamble.
+
+Refined transcription:`;
+            const startTime = Date.now();
+            try {
+                const response = yield fetch('https://api.openai.com/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${this.pluginSettings().openaiApiKey}`,
+                    },
+                    body: JSON.stringify({
+                        model: this.pluginSettings().gptModel || 'gpt-4-turbo',
+                        messages: [
+                            {
+                                role: 'user',
+                                content: prompt,
+                            },
+                        ],
+                        temperature: 0.3,
+                        max_tokens: 2048,
+                    }),
+                });
+                if (!response.ok) {
+                    throw new Error(`OpenAI API error: ${response.statusText}`);
+                }
+                const data = yield response.json();
+                const refinedText = ((_b = (_a = data.choices[0]) === null || _a === void 0 ? void 0 : _a.message) === null || _b === void 0 ? void 0 : _b.content) || instruction.originalText;
+                return {
+                    success: true,
+                    refinedText,
+                    provider: 'openai',
+                    model: this.pluginSettings().gptModel || 'gpt-4-turbo',
+                    tokensUsed: (_c = data.usage) === null || _c === void 0 ? void 0 : _c.total_tokens,
+                    duration: Date.now() - startTime,
+                };
+            }
+            catch (error) {
+                return {
+                    success: false,
+                    refinedText: instruction.originalText,
+                    error: error instanceof Error ? error.message : 'Unknown error',
+                    provider: 'openai',
+                    model: this.pluginSettings().gptModel || 'gpt-4-turbo',
+                    duration: Date.now() - startTime,
+                };
+            }
+        });
+    }
     pluginSettings() {
         var _a;
         return ((_a = this.plugin) === null || _a === void 0 ? void 0 : _a.settings) || {};
@@ -24270,10 +25810,9 @@ class RecordModal extends obsidian.Modal {
     }
 }
 
-/**
- * MicButton: Ribbon icon to trigger recording modal
- * Architecture: Simple toggle for RecordModal with visual feedback
- */
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
 class MicButton {
     constructor(plugin, recorderService, whisperService, llmRefineService, vaultOps, toast, contextLinkService, vaultRAGService, audioFileService) {
         this.ribbonIcon = null;
@@ -24306,7 +25845,7 @@ class MicButton {
             return;
         }
         // Open recording modal
-        const modal = new RecordModal(this.plugin.app, this.recorderService, this.whisperService, this.llmRefineService, this.vaultOps, this.toast, this.plugin, this.contextLinkService, this.vaultRAGService, this.plugin.mcpClientService, this.audioFileService);
+        const modal = new RecordModal(this.plugin.app, this.recorderService, this.whisperService, this.llmRefineService, this.vaultOps, this.toast, this.plugin, this.contextLinkService, this.vaultRAGService, this.plugin.mcpClientService, this.audioFileService, this.plugin.qaSessionService, this.plugin.transcriptFormatter, this.plugin.correctionDb, this.plugin.unifiedRefinement);
         modal.open();
     }
     /**
@@ -24333,10 +25872,9 @@ class MicButton {
     }
 }
 
-/**
- * Toast: Non-blocking notification system
- * Architecture: Obsidian-styled toast notifications for user feedback
- */
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
 class Toast {
     constructor() {
         this.container = null;
@@ -24475,6 +26013,9 @@ class Toast {
     }
 }
 
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
 class OnboardingModal extends obsidian.Modal {
     constructor(app, plugin) {
         super(app);
@@ -24558,6 +26099,9 @@ class OnboardingModal extends obsidian.Modal {
     }
 }
 
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
 class ContextLinkService {
     constructor(app) {
         this.app = app;
@@ -24621,6 +26165,9 @@ class ContextLinkService {
     }
 }
 
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
 class LinkInspectorModal extends obsidian.Modal {
     constructor(app, plugin, contextLinkService) {
         super(app);
@@ -24679,10 +26226,9 @@ class LinkInspectorModal extends obsidian.Modal {
     }
 }
 
-/**
- * RecordingHistoryModal: Browse and manage saved audio recordings
- * Architecture: List view with search, playback, and re-processing
- */
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
 class RecordingHistoryModal extends obsidian.Modal {
     constructor(app, plugin, audioFileService, toast) {
         super(app);
@@ -24858,7 +26404,7 @@ class RecordingHistoryModal extends obsidian.Modal {
                 // Close history modal
                 this.close();
                 // Open RecordModal with existing audio file
-                const modal = new RecordModal(this.app, this.plugin.recorderService, this.plugin.whisperService, this.plugin.llmRefineService, this.plugin.vaultOps, this.toast, this.plugin, this.plugin.contextLinkService, this.plugin.vaultRAGService, this.plugin.mcpClientService, this.audioFileService, recording // Pass the saved audio file
+                const modal = new RecordModal(this.app, this.plugin.recorderService, this.plugin.whisperService, this.plugin.llmRefineService, this.plugin.vaultOps, this.toast, this.plugin, this.plugin.contextLinkService, this.plugin.vaultRAGService, this.plugin.mcpClientService, this.audioFileService, this.plugin.qaSessionService, this.plugin.transcriptFormatter, this.plugin.correctionDb, this.plugin.unifiedRefinement, recording // Pass the saved audio file
                 );
                 modal.open();
             }
@@ -24974,6 +26520,9 @@ class RecordingHistoryModal extends obsidian.Modal {
     }
 }
 
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
 class StatusBar {
     constructor(app, onRecordRequest) {
         this.app = app;
@@ -25216,6 +26765,9 @@ class StatusBar {
     }
 }
 
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
 class MCPWarningModal extends obsidian.Modal {
     constructor(app, options) {
         super(app);
@@ -25262,11 +26814,1392 @@ class MCPWarningModal extends obsidian.Modal {
     }
 }
 
-/**
- * Zeddal: Speak your mind
- * Main plugin entry point
- * Architecture: Orchestrates RecorderService, WhisperService, and UI components
- */
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
+class QASessionService {
+    constructor(config, ragService = null) {
+        this.config = config;
+        this.ragService = ragService;
+        this.openaiApiKey = config.get('openaiApiKey') || '';
+        this.gptModel = config.get('gptModel') || 'gpt-4-turbo';
+    }
+    /**
+     * Process a Q&A session recording
+     *
+     * @param audioBlob - Recorded audio blob
+     * @param userSpeakers - User-defined speaker labels (optional)
+     * @param contextQuery - Query for RAG context retrieval
+     * @returns Structured Q&A session
+     */
+    processQASession(audioBlob, userSpeakers, contextQuery) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const startTime = Date.now();
+            try {
+                // Step 1: Transcribe with Whisper (with detailed timestamps)
+                new obsidian.Notice('Transcribing Q&A session...');
+                const transcript = yield this.transcribeWithTimestamps(audioBlob);
+                // Step 2: Retrieve RAG context if enabled
+                let ragContext = '';
+                const includeRAG = this.config.get('includeRAGContext') !== false;
+                if (includeRAG && this.ragService && contextQuery) {
+                    new obsidian.Notice('Retrieving lecture context...');
+                    // Note: ragTopK is already configured in settings, retrieveContext uses it internally
+                    const contexts = yield this.ragService.retrieveContext(contextQuery);
+                    ragContext = contexts.join('\n\n');
+                }
+                // Step 3: Structure Q&A pairs with GPT-4
+                new obsidian.Notice('Analyzing speakers and structuring Q&A...');
+                const gptStructure = yield this.structureQAPairs(transcript, ragContext, userSpeakers);
+                // Step 4: Build final Q&A session object
+                const session = this.buildQASession(gptStructure, transcript, userSpeakers, Date.now() - startTime);
+                new obsidian.Notice(`Q&A session processed: ${session.pairs.length} questions`);
+                return session;
+            }
+            catch (error) {
+                console.error('Error processing Q&A session:', error);
+                throw new Error(`Failed to process Q&A session: ${error.message}`);
+            }
+        });
+    }
+    /**
+     * Transcribe audio with detailed timestamps
+     */
+    transcribeWithTimestamps(audioBlob) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const formData = new FormData();
+            formData.append('file', audioBlob, 'recording.webm');
+            formData.append('model', 'whisper-1');
+            formData.append('response_format', 'verbose_json'); // Get timestamps
+            formData.append('timestamp_granularities[]', 'segment'); // Segment-level timestamps
+            const response = yield fetch('https://api.openai.com/v1/audio/transcriptions', {
+                method: 'POST',
+                headers: {
+                    Authorization: `Bearer ${this.openaiApiKey}`,
+                },
+                body: formData,
+            });
+            if (!response.ok) {
+                throw new Error(`Whisper API error: ${response.statusText}`);
+            }
+            return yield response.json();
+        });
+    }
+    /**
+     * Use GPT-4 to identify speakers and structure Q&A pairs
+     */
+    structureQAPairs(transcript, ragContext, userSpeakers) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const transcriptText = transcript.text || '';
+            const segments = transcript.segments || [];
+            // Build prompt for GPT-4
+            const prompt = this.buildQAStructuringPrompt(transcriptText, segments, ragContext, userSpeakers);
+            // Call GPT-4
+            const response = yield fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${this.openaiApiKey}`,
+                },
+                body: JSON.stringify({
+                    model: this.gptModel,
+                    messages: [
+                        {
+                            role: 'system',
+                            content: 'You are an expert at analyzing classroom Q&A sessions and identifying speaker changes, questions, and answers.',
+                        },
+                        {
+                            role: 'user',
+                            content: prompt,
+                        },
+                    ],
+                    response_format: { type: 'json_object' },
+                    temperature: 0.3, // Low temperature for consistency
+                }),
+            });
+            if (!response.ok) {
+                throw new Error(`GPT-4 API error: ${response.statusText}`);
+            }
+            const result = yield response.json();
+            const content = result.choices[0].message.content;
+            try {
+                return JSON.parse(content);
+            }
+            catch (error) {
+                console.error('Failed to parse GPT-4 response:', content);
+                throw new Error('Invalid GPT-4 response format');
+            }
+        });
+    }
+    /**
+     * Build GPT-4 prompt for Q&A structuring
+     */
+    buildQAStructuringPrompt(transcriptText, segments, ragContext, userSpeakers) {
+        let prompt = `You are analyzing a classroom Q&A session transcript. Your task is to:
+
+1. **Identify speakers**: Detect distinct speakers based on:
+   - Speech patterns (e.g., "Sir", "Professor", formal address)
+   - Question markers (e.g., "I have a question", "Can you explain")
+   - Answer patterns (e.g., "Yes, I understand", "Let me clarify", explanatory tone)
+   - Conversational flow and pauses
+
+2. **Classify roles**:
+   - Lecturer/Professor: Person answering questions, providing explanations
+   - Students: People asking questions
+
+3. **Structure Q&A pairs**:
+   - Match each question with its corresponding answer
+   - Identify follow-up questions (when the same student asks related question immediately after)
+   - Provide a 1-2 sentence summary for each pair
+
+4. **Extract related topics**: If context from previous lectures is mentioned, note it
+
+`;
+        // Add user-defined speakers if provided
+        if (userSpeakers && userSpeakers.length > 0) {
+            prompt += `\n**Known speakers:**\n`;
+            userSpeakers.forEach(speaker => {
+                prompt += `- ${speaker.label} (${speaker.role})\n`;
+            });
+            prompt += `\nUse these labels when you identify these speakers in the transcript.\n`;
+        }
+        // Add RAG context if available
+        if (ragContext) {
+            prompt += `\n**Context from previous lectures:**\n${ragContext.substring(0, 2000)}\n\n`;
+            prompt += `Use this context to identify when students reference previous material.\n`;
+        }
+        // Add transcript with timestamps
+        prompt += `\n**Transcript:**\n\`\`\`\n${transcriptText}\n\`\`\`\n\n`;
+        if (segments.length > 0) {
+            prompt += `**Segment timestamps:**\n`;
+            segments.forEach((seg, idx) => {
+                prompt += `[${seg.start.toFixed(1)}s - ${seg.end.toFixed(1)}s]: ${seg.text}\n`;
+            });
+            prompt += `\n`;
+        }
+        // Specify output format
+        prompt += `**Output as JSON with this exact structure:**
+\`\`\`json
+{
+  "participants": [
+    {
+      "id": "lecturer",
+      "inferredLabel": "Professor" or user-provided label,
+      "role": "lecturer",
+      "confidence": 0.95
+    },
+    {
+      "id": "student1",
+      "inferredLabel": "Student 1" or user-provided label,
+      "role": "student",
+      "confidence": 0.85
+    }
+  ],
+  "pairs": [
+    {
+      "question": {
+        "speaker": "student1",
+        "text": "Full question text",
+        "timestamp": 45.2
+      },
+      "answer": {
+        "speaker": "lecturer",
+        "text": "Full answer text",
+        "timestamp": 58.1
+      },
+      "summary": "Brief 1-2 sentence summary",
+      "relatedTopics": ["topic1", "topic2"],
+      "isFollowUp": false,
+      "followUpTo": null
+    }
+  ]
+}
+\`\`\`
+
+**Important guidelines:**
+- Mark isFollowUp as true ONLY if it's the same student asking a related question immediately after the previous answer
+- For follow-ups, set followUpTo to the index of the parent question (e.g., "0" for first question)
+- Be conservative with speaker assignments - use confidence scores
+- Include timestamps from the segment data when available
+- Summarize each Q&A pair concisely but accurately
+`;
+        return prompt;
+    }
+    /**
+     * Build final QASession object from GPT structure
+     */
+    buildQASession(gptStructure, transcript, userSpeakers, processingTime) {
+        // Map speakers
+        const speakerMap = new Map();
+        gptStructure.participants.forEach(p => {
+            speakerMap.set(p.id, {
+                id: p.id,
+                label: p.inferredLabel,
+                role: p.role,
+            });
+        });
+        // Override with user-defined labels if provided
+        if (userSpeakers) {
+            userSpeakers.forEach(us => {
+                if (speakerMap.has(us.id)) {
+                    speakerMap.set(us.id, us);
+                }
+            });
+        }
+        // Build Q&A pairs with follow-up nesting
+        const pairs = [];
+        const followUpMap = new Map(); // Track follow-ups by parent
+        gptStructure.pairs.forEach((pair, index) => {
+            var _a, _b;
+            const qaPair = {
+                id: `query-${index + 1}`,
+                number: String(index + 1),
+                question: {
+                    speaker: ((_a = speakerMap.get(pair.question.speaker)) === null || _a === void 0 ? void 0 : _a.label) || 'Unknown',
+                    speakerId: pair.question.speaker,
+                    text: pair.question.text,
+                    timestamp: pair.question.timestamp,
+                },
+                answer: {
+                    speaker: ((_b = speakerMap.get(pair.answer.speaker)) === null || _b === void 0 ? void 0 : _b.label) || 'Unknown',
+                    speakerId: pair.answer.speaker,
+                    text: pair.answer.text,
+                    timestamp: pair.answer.timestamp,
+                },
+                summary: pair.summary,
+                relatedTopics: pair.relatedTopics || [],
+                followUps: [],
+            };
+            if (pair.isFollowUp && pair.followUpTo !== null && pair.followUpTo !== undefined) {
+                // This is a follow-up question
+                const parentIndex = parseInt(pair.followUpTo);
+                if (!followUpMap.has(String(parentIndex))) {
+                    followUpMap.set(String(parentIndex), []);
+                }
+                followUpMap.get(String(parentIndex)).push(qaPair);
+            }
+            else {
+                // This is a main question
+                pairs.push(qaPair);
+            }
+        });
+        // Assign follow-ups to their parent questions with subscript numbering
+        pairs.forEach((pair, index) => {
+            const followUps = followUpMap.get(String(index));
+            if (followUps && followUps.length > 0) {
+                pair.followUps = followUps.map((fu, fuIndex) => (Object.assign(Object.assign({}, fu), { id: `query-${index + 1}${String.fromCharCode(97 + fuIndex)}`, number: `${index + 1}${String.fromCharCode(97 + fuIndex)}` })));
+            }
+        });
+        // Count total follow-ups
+        const totalFollowUps = pairs.reduce((sum, p) => { var _a; return sum + (((_a = p.followUps) === null || _a === void 0 ? void 0 : _a.length) || 0); }, 0);
+        return {
+            title: `Q&A Session - ${new Date().toLocaleDateString()}`,
+            date: new Date().toISOString(),
+            duration: transcript.duration || 0,
+            participants: Array.from(speakerMap.values()),
+            pairs,
+            metadata: {
+                totalQuestions: pairs.length,
+                totalFollowUps,
+                ragContextUsed: Boolean(this.ragService && this.config.get('includeRAGContext')),
+                processingTime,
+                transcriptionModel: 'whisper-1',
+                structuringModel: this.gptModel,
+            },
+        };
+    }
+    /**
+     * Update API key when settings change
+     */
+    updateApiKey(apiKey) {
+        this.openaiApiKey = apiKey;
+    }
+    /**
+     * Update GPT model when settings change
+     */
+    updateGPTModel(model) {
+        this.gptModel = model;
+    }
+}
+
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
+class TranscriptFormatter {
+    constructor(config) {
+        this.config = config;
+        this.openaiApiKey = config.get('openaiApiKey') || '';
+        this.gptModel = config.get('gptModel') || 'gpt-4-turbo';
+    }
+    /**
+     * Format technical content with LaTeX and Markdown
+     *
+     * @param rawTranscript - Raw Whisper transcription
+     * @param domain - Technical domain (or 'auto' for detection)
+     * @returns Formatted transcript with LaTeX/Markdown
+     */
+    formatTechnicalContent(rawTranscript, domain) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const effectiveDomain = domain || this.config.get('technicalDomain') || 'auto';
+            const examples = this.getFewShotExamples(effectiveDomain);
+            const rules = this.getFormattingRules();
+            const prompt = `You are formatting a technical transcript for Obsidian/Markdown with LaTeX support.
+
+${examples}
+
+${rules}
+
+**Important Context Guidelines:**
+- Only format content that is clearly technical/mathematical
+- Preserve natural speech and conversational tone
+- If ambiguous, prefer natural text over LaTeX
+- Detect when speaker switches between technical and non-technical content
+
+**Input Transcript:**
+${rawTranscript}
+
+**Your Task:**
+Return the formatted transcript with proper LaTeX and Markdown. Maintain the original structure and flow.`;
+            try {
+                const response = yield this.callGPT4(prompt);
+                return response;
+            }
+            catch (error) {
+                console.error('Failed to format technical content:', error);
+                // Fallback: return original transcript
+                return rawTranscript;
+            }
+        });
+    }
+    /**
+     * Get domain-specific few-shot examples
+     */
+    getFewShotExamples(domain) {
+        const mathExamples = `
+**Math Examples:**
+
+Input: "x squared plus y squared equals z squared"
+Output: "$x^2 + y^2 = z^2$"
+
+Input: "the integral from zero to pi of sine x dx"
+Output: "$\\int_0^\\pi \\sin(x) \\, dx$"
+
+Input: "alpha times beta plus gamma"
+Output: "$\\alpha \\times \\beta + \\gamma$"
+
+Input: "the limit as n approaches infinity of one over n"
+Output: "$\\lim_{n \\to \\infty} \\frac{1}{n}$"
+
+Input: "f prime of x equals two x"
+Output: "$f'(x) = 2x$"
+
+Input: "the square root of a squared plus b squared"
+Output: "$\\sqrt{a^2 + b^2}$"
+
+Input: "theta is approximately three point one four radians"
+Output: "$\\theta \\approx 3.14$ radians"
+
+Input: "the derivative of x cubed is three x squared"
+Output: "The derivative of $x^3$ is $3x^2$"
+
+Input: "we have the equation displayed x equals negative b plus or minus square root of b squared minus four a c all over two a"
+Output: "We have the equation:
+
+$$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$$"
+`;
+        const codeExamples = `
+**Code Examples:**
+
+Input: "function add takes x and y returns x plus y"
+Output: "\`function add(x, y) { return x + y; }\`"
+
+Input: "code block python for i in range ten print i"
+Output: "\`\`\`python
+for i in range(10):
+    print(i)
+\`\`\`"
+
+Input: "import numpy as np and matplotlib dot pyplot as plt"
+Output: "\`import numpy as np\` and \`import matplotlib.pyplot as plt\`"
+
+Input: "the time complexity is o of n squared"
+Output: "The time complexity is O(n²)"
+
+Input: "code block javascript const greeting equals hello world console log greeting"
+Output: "\`\`\`javascript
+const greeting = 'hello world';
+console.log(greeting);
+\`\`\`"
+
+Input: "the variable name should be in snake case like user underscore name"
+Output: "The variable name should be in snake_case like \`user_name\`"
+
+Input: "run the command npm install"
+Output: "\`\`\`bash
+npm install
+\`\`\`"
+
+Input: "execute git status and then git add dot"
+Output: "\`\`\`bash
+git status
+git add .
+\`\`\`"
+
+Input: "shell command cd into the project directory then ls hyphen la"
+Output: "\`\`\`bash
+cd project
+ls -la
+\`\`\`"
+
+Input: "python code def factorial n if n equals zero return one else return n times factorial n minus one"
+Output: "\`\`\`python
+def factorial(n):
+    if n == 0:
+        return 1
+    else:
+        return n * factorial(n - 1)
+\`\`\`"
+
+Input: "typescript interface user with name string and age number"
+Output: "\`\`\`typescript
+interface User {
+    name: string;
+    age: number;
+}
+\`\`\`"
+
+Input: "golang function func main open brace fmt dot println hello world close brace"
+Output: "\`\`\`go
+func main() {
+    fmt.Println("hello world")
+}
+\`\`\`"
+
+Input: "java code public class hello world public static void main string args system out println hello"
+Output: "\`\`\`java
+public class HelloWorld {
+    public static void main(String[] args) {
+        System.out.println("hello");
+    }
+}
+\`\`\`"
+
+Input: "rust function fn add x i32 y i32 arrow i32 x plus y"
+Output: "\`\`\`rust
+fn add(x: i32, y: i32) -> i32 {
+    x + y
+}
+\`\`\`"
+
+Input: "powershell command get hyphen process pipe where hyphen object status equals running"
+Output: "\`\`\`powershell
+Get-Process | Where-Object {$_.Status -eq 'Running'}
+\`\`\`"
+
+Input: "docker run hyphen d hyphen p eight zero eight zero colon eight zero nginx"
+Output: "\`\`\`bash
+docker run -d -p 8080:80 nginx
+\`\`\`"
+
+Input: "busybox command ash hyphen c echo hello world"
+Output: "\`\`\`ash
+ash -c 'echo hello world'
+\`\`\`"
+
+Input: "alpine linux run apk add curl and then use busybox wget"
+Output: "\`\`\`ash
+apk add curl
+busybox wget http://example.com
+\`\`\`"
+
+Input: "shell script ash for embedded system while true do echo running sleep one done"
+Output: "\`\`\`ash
+while true; do
+    echo "running"
+    sleep 1
+done
+\`\`\`"
+
+Input: "busybox find dot hyphen name star dot log hyphen exec rm open brace close brace semicolon"
+Output: "\`\`\`ash
+busybox find . -name "*.log" -exec rm {} \\;
+\`\`\`"
+`;
+        const scienceExamples = `
+**Science Examples:**
+
+Input: "h two o consists of two hydrogen atoms and one oxygen atom"
+Output: "H₂O consists of two hydrogen atoms and one oxygen atom"
+
+Input: "the reaction is c h four plus two o two yields c o two plus two h two o"
+Output: "The reaction is: CH₄ + 2O₂ → CO₂ + 2H₂O"
+
+Input: "delta g equals delta h minus t delta s"
+Output: "$\\Delta G = \\Delta H - T\\Delta S$"
+
+Input: "e equals m c squared"
+Output: "$E = mc^2$"
+
+Input: "psi is the wave function in quantum mechanics"
+Output: "$\\Psi$ is the wave function in quantum mechanics"
+`;
+        switch (domain) {
+            case 'math':
+                return mathExamples;
+            case 'code':
+                return codeExamples;
+            case 'science':
+                return scienceExamples;
+            case 'auto':
+            default:
+                return mathExamples + '\n' + codeExamples + '\n' + scienceExamples;
+        }
+    }
+    /**
+     * Get formatting rules
+     */
+    getFormattingRules() {
+        const rules = [];
+        if (this.config.get('enableInlineLaTeX') !== false) {
+            rules.push('- Use inline LaTeX ($...$) for mathematical expressions within sentences');
+        }
+        if (this.config.get('enableDisplayLaTeX') !== false) {
+            rules.push('- Use display LaTeX ($$...$$) for standalone equations or complex expressions');
+        }
+        if (this.config.get('enableCodeBlocks') !== false) {
+            rules.push('- Use code blocks (```language) for multi-line code with PROPER LANGUAGE TAG');
+            rules.push('- Use inline code (`...`) for short code snippets or variable names');
+            rules.push('- ALWAYS specify the language after opening triple backticks');
+        }
+        rules.push('');
+        rules.push('**Language Detection for Code Blocks:**');
+        rules.push('');
+        rules.push('**Shell Types:**');
+        rules.push('- ASH/BusyBox → ash (when user mentions: busybox, ash, alpine linux, embedded system, minimal container)');
+        rules.push('- BusyBox commands: apk, busybox [cmd], ash -c, /bin/busybox, etc.');
+        rules.push('- All standard busybox utilities: ls, cp, mv, rm, cat, grep, sed, awk, find, ps, top, vi, etc.');
+        rules.push('- Bash → bash (standard Unix/Linux shell commands: npm, git, cd, ls, docker, pip, cargo, brew)');
+        rules.push('- PowerShell → powershell (Get-, Set-, Where-Object, $variable)');
+        rules.push('- Zsh → zsh (if explicitly mentioned by user)');
+        rules.push('- Default to bash for generic shell commands unless busybox/ash context is clear');
+        rules.push('');
+        rules.push('**Programming Languages:**');
+        rules.push('- Python → python (def, import, class, print, range, if __name__)');
+        rules.push('- JavaScript → javascript (const, let, var, function, =>, console.log)');
+        rules.push('- TypeScript → typescript (interface, type, : annotations)');
+        rules.push('- Go → go (func, package, fmt.Println)');
+        rules.push('- Java → java (public class, void, System.out)');
+        rules.push('- Rust → rust (fn, let mut, use, ->)');
+        rules.push('- C/C++ → c or cpp (#include, int main)');
+        rules.push('- Ruby → ruby (def, end, puts)');
+        rules.push('- PHP → php (<?php, $variable)');
+        rules.push('- SQL → sql (SELECT, INSERT, CREATE TABLE)');
+        rules.push('');
+        rules.push('- Use proper LaTeX commands: \\frac{}{}, \\int, \\sum, \\lim, \\sqrt, etc.');
+        rules.push('- Greek letters: \\alpha, \\beta, \\gamma, \\theta, \\pi, etc.');
+        rules.push('- Preserve paragraph breaks and natural flow');
+        rules.push('- Don\'t over-format: "I went to the store" stays as natural text');
+        return '**Formatting Rules:**\n' + rules.join('\n');
+    }
+    /**
+     * Call GPT-4 for formatting
+     */
+    callGPT4(prompt) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const response = yield fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${this.openaiApiKey}`,
+                },
+                body: JSON.stringify({
+                    model: this.gptModel,
+                    messages: [
+                        {
+                            role: 'system',
+                            content: 'You are an expert at formatting technical transcripts with LaTeX and Markdown. ' +
+                                'You understand mathematical notation, programming languages, shell commands (bash, ash, busybox, powershell), and scientific symbols. ' +
+                                'You ALWAYS specify the correct language tag for code blocks (bash, ash, python, javascript, go, java, rust, etc.). ' +
+                                'You detect the language from keywords and context. ' +
+                                'For BusyBox/ASH commands (Alpine Linux, embedded systems), use "ash" tag. ' +
+                                'For standard Unix/Linux shell commands, use "bash" tag. ' +
+                                'You preserve natural language while enhancing technical content for readability.',
+                        },
+                        {
+                            role: 'user',
+                            content: prompt,
+                        },
+                    ],
+                    temperature: 0.3, // Low temperature for consistency
+                }),
+            });
+            if (!response.ok) {
+                throw new Error(`GPT-4 API error: ${response.statusText}`);
+            }
+            const result = yield response.json();
+            return result.choices[0].message.content;
+        });
+    }
+    /**
+     * Update API key when settings change
+     */
+    updateApiKey(apiKey) {
+        this.openaiApiKey = apiKey;
+    }
+    /**
+     * Update GPT model when settings change
+     */
+    updateGPTModel(model) {
+        this.gptModel = model;
+    }
+}
+
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
+class CorrectionDatabase {
+    constructor(app, dbPath = '.zeddal/corrections.json') {
+        this.patterns = new Map();
+        this.autoSaveInterval = null;
+        this.app = app;
+        this.dbPath = dbPath;
+    }
+    /**
+     * Initialize the database (load from disk)
+     */
+    initialize() {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                const data = yield this.app.vault.adapter.read(this.dbPath);
+                const parsed = JSON.parse(data);
+                // Convert array to Map
+                if (Array.isArray(parsed.patterns)) {
+                    parsed.patterns.forEach((p) => {
+                        this.patterns.set(p.id, p);
+                    });
+                }
+                console.log(`Loaded ${this.patterns.size} correction patterns`);
+            }
+            catch (error) {
+                // Database doesn't exist yet, create it
+                console.log('Creating new correction database');
+                yield this.save();
+            }
+            // Auto-save every 5 minutes
+            this.autoSaveInterval = window.setInterval(() => {
+                this.save();
+            }, 5 * 60 * 1000);
+        });
+    }
+    /**
+     * Add or update a correction pattern
+     */
+    addCorrection(before, after, category, context, userInstruction) {
+        return __awaiter(this, void 0, void 0, function* () {
+            // Check if similar pattern exists
+            const existing = this.findSimilarPattern(before, after);
+            if (existing) {
+                // Update frequency and confidence
+                existing.frequency++;
+                existing.confidence = Math.min(1.0, existing.confidence + 0.05);
+                existing.lastUsed = Date.now();
+                // Auto-apply if confidence is high enough
+                if (existing.confidence >= 0.9 && !existing.autoApply) {
+                    existing.autoApply = true;
+                    console.log(`Auto-apply enabled for pattern: ${before} → ${after}`);
+                }
+                this.patterns.set(existing.id, existing);
+                yield this.save();
+                return existing;
+            }
+            // Create new pattern
+            const pattern = {
+                id: this.generateId(),
+                timestamp: Date.now(),
+                category,
+                before,
+                after,
+                context,
+                frequency: 1,
+                confidence: 0.5, // Start with medium confidence
+                autoApply: false,
+                lastUsed: Date.now(),
+                userInstruction,
+                isShared: false,
+                isLocal: true,
+            };
+            this.patterns.set(pattern.id, pattern);
+            yield this.save();
+            return pattern;
+        });
+    }
+    /**
+     * Find patterns that match the given text
+     */
+    findMatches(text) {
+        const suggestions = [];
+        for (const pattern of this.patterns.values()) {
+            // Only suggest if confidence is reasonable
+            if (pattern.confidence < 0.5)
+                continue;
+            // Simple string matching (could be enhanced with regex)
+            let index = text.indexOf(pattern.before);
+            while (index !== -1) {
+                suggestions.push({
+                    pattern,
+                    match: pattern.before,
+                    replacement: pattern.after,
+                    confidence: pattern.confidence,
+                    position: { start: index, end: index + pattern.before.length },
+                });
+                index = text.indexOf(pattern.before, index + 1);
+            }
+        }
+        // Sort by confidence (highest first)
+        return suggestions.sort((a, b) => b.confidence - a.confidence);
+    }
+    /**
+     * Get auto-apply patterns
+     */
+    getAutoApplyPatterns() {
+        return Array.from(this.patterns.values()).filter(p => p.autoApply);
+    }
+    /**
+     * Apply auto-apply patterns to text
+     */
+    applyAutoCorrections(text) {
+        let correctedText = text;
+        const applied = [];
+        const autoPatterns = this.getAutoApplyPatterns();
+        for (const pattern of autoPatterns) {
+            if (correctedText.includes(pattern.before)) {
+                correctedText = correctedText.replace(new RegExp(this.escapeRegex(pattern.before), 'g'), pattern.after);
+                applied.push(pattern);
+                // Update usage stats
+                pattern.lastUsed = Date.now();
+                pattern.frequency++;
+            }
+        }
+        if (applied.length > 0) {
+            this.save(); // Save updated stats
+        }
+        return { text: correctedText, applied };
+    }
+    /**
+     * Get analytics
+     */
+    getAnalytics() {
+        const patterns = Array.from(this.patterns.values());
+        const categoryBreakdown = {
+            shell_flags: 0,
+            capitalization: 0,
+            punctuation: 0,
+            technical_term: 0,
+            code_formatting: 0,
+            math_notation: 0,
+            custom: 0,
+        };
+        patterns.forEach(p => {
+            categoryBreakdown[p.category]++;
+        });
+        const autoApplyCount = patterns.filter(p => p.autoApply).length;
+        const totalCorrections = patterns.reduce((sum, p) => sum + p.frequency, 0);
+        return {
+            totalCorrections,
+            topPatterns: patterns
+                .sort((a, b) => b.frequency - a.frequency)
+                .slice(0, 10)
+                .map(pattern => ({ pattern, frequency: pattern.frequency })),
+            autoApplyRate: patterns.length > 0 ? autoApplyCount / patterns.length : 0,
+            manualEditRate: 1 - (patterns.length > 0 ? autoApplyCount / patterns.length : 0),
+            categoryBreakdown,
+            lastUpdated: Date.now(),
+        };
+    }
+    /**
+     * Get patterns for GPT prompt (few-shot learning)
+     */
+    getPatternsForPrompt(limit = 10) {
+        const patterns = Array.from(this.patterns.values())
+            .sort((a, b) => b.confidence - a.confidence)
+            .slice(0, limit);
+        return patterns.map(p => {
+            let desc = `"${p.before}" → "${p.after}"`;
+            if (p.context) {
+                desc += ` (context: ${p.context})`;
+            }
+            desc += ` [${p.category}, confidence: ${(p.confidence * 100).toFixed(0)}%]`;
+            return desc;
+        });
+    }
+    /**
+     * Export patterns for sharing
+     */
+    exportPatterns(includePrivate = false) {
+        const patterns = Array.from(this.patterns.values())
+            .filter(p => includePrivate || p.isShared);
+        return JSON.stringify({
+            version: '1.0.0',
+            exported: Date.now(),
+            patterns,
+        }, null, 2);
+    }
+    /**
+     * Import patterns from JSON
+     */
+    importPatterns(json_1) {
+        return __awaiter(this, arguments, void 0, function* (json, merge = true) {
+            const data = JSON.parse(json);
+            const imported = data.patterns || [];
+            let count = 0;
+            for (const pattern of imported) {
+                if (!merge || !this.patterns.has(pattern.id)) {
+                    this.patterns.set(pattern.id, pattern);
+                    count++;
+                }
+            }
+            yield this.save();
+            return count;
+        });
+    }
+    /**
+     * Delete a pattern
+     */
+    deletePattern(id) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const deleted = this.patterns.delete(id);
+            if (deleted) {
+                yield this.save();
+            }
+            return deleted;
+        });
+    }
+    /**
+     * Clear all patterns
+     */
+    clearAll() {
+        return __awaiter(this, void 0, void 0, function* () {
+            this.patterns.clear();
+            yield this.save();
+        });
+    }
+    /**
+     * Update pattern auto-apply setting
+     */
+    setAutoApply(id, autoApply) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const pattern = this.patterns.get(id);
+            if (pattern) {
+                pattern.autoApply = autoApply;
+                yield this.save();
+            }
+        });
+    }
+    /**
+     * Save database to disk
+     */
+    save() {
+        return __awaiter(this, void 0, void 0, function* () {
+            const data = {
+                version: '1.0.0',
+                lastSaved: Date.now(),
+                patterns: Array.from(this.patterns.values()),
+            };
+            try {
+                // Ensure directory exists
+                const dir = this.dbPath.substring(0, this.dbPath.lastIndexOf('/'));
+                try {
+                    yield this.app.vault.adapter.mkdir(dir);
+                }
+                catch (e) {
+                    // Directory might already exist
+                }
+                yield this.app.vault.adapter.write(this.dbPath, JSON.stringify(data, null, 2));
+            }
+            catch (error) {
+                console.error('Failed to save correction database:', error);
+            }
+        });
+    }
+    /**
+     * Find similar pattern
+     */
+    findSimilarPattern(before, after) {
+        for (const pattern of this.patterns.values()) {
+            if (pattern.before === before && pattern.after === after) {
+                return pattern;
+            }
+        }
+        return null;
+    }
+    /**
+     * Generate unique ID
+     */
+    generateId() {
+        return `corr_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    }
+    /**
+     * Escape regex special characters
+     */
+    escapeRegex(str) {
+        return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+    /**
+     * Cleanup on close
+     */
+    destroy() {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (this.autoSaveInterval) {
+                clearInterval(this.autoSaveInterval);
+            }
+            yield this.save();
+        });
+    }
+}
+
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
+class DiffGenerator {
+    /**
+     * Generate diff between two texts
+     */
+    static generate(original, modified) {
+        const originalLines = original.split('\n');
+        const modifiedLines = modified.split('\n');
+        const changes = [];
+        let additions = 0;
+        let removals = 0;
+        let modifications = 0;
+        // Simple line-by-line diff
+        const maxLines = Math.max(originalLines.length, modifiedLines.length);
+        for (let i = 0; i < maxLines; i++) {
+            const origLine = originalLines[i];
+            const modLine = modifiedLines[i];
+            if (origLine === modLine) {
+                // Unchanged
+                changes.push({
+                    type: 'unchanged',
+                    line: i + 1,
+                    content: origLine || '',
+                });
+            }
+            else if (origLine === undefined) {
+                // Addition
+                changes.push({
+                    type: 'add',
+                    line: i + 1,
+                    content: modLine,
+                });
+                additions++;
+            }
+            else if (modLine === undefined) {
+                // Removal
+                changes.push({
+                    type: 'remove',
+                    line: i + 1,
+                    content: origLine,
+                });
+                removals++;
+            }
+            else {
+                // Modification (show as remove + add)
+                changes.push({
+                    type: 'remove',
+                    line: i + 1,
+                    content: origLine,
+                });
+                changes.push({
+                    type: 'add',
+                    line: i + 1,
+                    content: modLine,
+                });
+                modifications++;
+            }
+        }
+        return {
+            changes,
+            summary: {
+                additions,
+                removals,
+                modifications,
+            },
+        };
+    }
+    /**
+     * Generate unified diff format (for display)
+     */
+    static generateUnified(original, modified, contextLines = 3) {
+        const diff = this.generate(original, modified);
+        const lines = [];
+        lines.push('--- Original');
+        lines.push('+++ Modified');
+        lines.push('');
+        for (const change of diff.changes) {
+            switch (change.type) {
+                case 'remove':
+                    lines.push(`- ${change.content}`);
+                    break;
+                case 'add':
+                    lines.push(`+ ${change.content}`);
+                    break;
+                case 'unchanged':
+                    lines.push(`  ${change.content}`);
+                    break;
+            }
+        }
+        return lines.join('\n');
+    }
+    /**
+     * Generate compact summary of changes
+     */
+    static generateSummary(original, modified) {
+        const diff = this.generate(original, modified);
+        const { additions, removals, modifications } = diff.summary;
+        const parts = [];
+        if (modifications > 0) {
+            parts.push(`${modifications} line(s) modified`);
+        }
+        if (additions > 0) {
+            parts.push(`${additions} line(s) added`);
+        }
+        if (removals > 0) {
+            parts.push(`${removals} line(s) removed`);
+        }
+        if (parts.length === 0) {
+            return 'No changes detected';
+        }
+        return parts.join(', ');
+    }
+    /**
+     * Extract specific changes (for learning)
+     */
+    static extractChanges(original, modified) {
+        const changes = [];
+        // Word-level diff
+        const originalWords = original.split(/\s+/);
+        const modifiedWords = modified.split(/\s+/);
+        // Find changed words
+        for (let i = 0; i < Math.min(originalWords.length, modifiedWords.length); i++) {
+            if (originalWords[i] !== modifiedWords[i]) {
+                changes.push({
+                    before: originalWords[i],
+                    after: modifiedWords[i],
+                });
+            }
+        }
+        return changes;
+    }
+    /**
+     * Detect common correction patterns
+     */
+    static detectPatterns(original, modified) {
+        const patterns = [];
+        const changes = this.extractChanges(original, modified);
+        for (const change of changes) {
+            // Detect shell flags
+            if (/^[a-z]+$/.test(change.before) && change.after === `-${change.before}`) {
+                patterns.push({
+                    category: 'shell_flags',
+                    pattern: `Added hyphen to command flags: ${change.before} → ${change.after}`,
+                });
+            }
+            // Detect capitalization
+            if (change.before.toLowerCase() === change.after.toLowerCase()) {
+                patterns.push({
+                    category: 'capitalization',
+                    pattern: `Changed capitalization: ${change.before} → ${change.after}`,
+                });
+            }
+            // Detect path corrections
+            if (change.before.includes('~') || change.after.includes('~')) {
+                patterns.push({
+                    category: 'capitalization',
+                    pattern: `Corrected path: ${change.before} → ${change.after}`,
+                });
+            }
+        }
+        return patterns;
+    }
+    /**
+     * Generate HTML diff (for rich display)
+     */
+    static generateHTML(original, modified) {
+        const diff = this.generate(original, modified);
+        const lines = [];
+        lines.push('<div class="zeddal-diff">');
+        for (const change of diff.changes) {
+            const escapedContent = this.escapeHTML(change.content);
+            switch (change.type) {
+                case 'remove':
+                    lines.push(`<div class="diff-remove">- ${escapedContent}</div>`);
+                    break;
+                case 'add':
+                    lines.push(`<div class="diff-add">+ ${escapedContent}</div>`);
+                    break;
+                case 'unchanged':
+                    lines.push(`<div class="diff-unchanged">  ${escapedContent}</div>`);
+                    break;
+            }
+        }
+        lines.push('</div>');
+        return lines.join('\n');
+    }
+    /**
+     * Escape HTML
+     */
+    static escapeHTML(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+}
+
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
+class UnifiedRefinementService {
+    constructor(config, correctionDb) {
+        this.config = config;
+        this.correctionDb = correctionDb;
+        this.openaiApiKey = config.get('openaiApiKey') || '';
+        this.gptModel = config.get('gptModel') || 'gpt-4-turbo';
+    }
+    /**
+     * Unified refinement: formatting + summarization + learning in one call
+     */
+    refine(input) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const prompt = this.buildUnifiedPrompt(input);
+            try {
+                const response = yield this.callGPT4(prompt);
+                // Parse JSON response
+                const output = JSON.parse(response);
+                // Learn from detected corrections
+                if (output.detectedCorrections) {
+                    yield this.learnFromCorrections(output.detectedCorrections);
+                }
+                // Add audio link if requested
+                if (input.includeAudioLink && input.audioFilePath) {
+                    output.body = `![[${input.audioFilePath}]]\n\n${output.body}`;
+                }
+                return output;
+            }
+            catch (error) {
+                console.error('Unified refinement failed:', error);
+                // Fallback: return minimally processed version
+                return {
+                    title: `Voice Note ${new Date().toLocaleDateString()}`,
+                    summary: 'Transcription without AI enhancement',
+                    body: input.userCorrectedText || input.rawTranscript,
+                    tags: [],
+                };
+            }
+        });
+    }
+    /**
+     * Build comprehensive prompt with all context
+     */
+    buildUnifiedPrompt(input) {
+        const parts = [];
+        // System context
+        parts.push('You are refining a voice transcript with the following capabilities:');
+        parts.push('');
+        parts.push('1. **Technical Formatting**: Apply LaTeX for math, code blocks for programming');
+        parts.push('2. **User Correction Learning**: Learn from manual corrections and apply patterns');
+        parts.push('3. **Summarization**: Generate title and structured summary');
+        parts.push('4. **Context Linking**: Create wikilinks to related notes');
+        parts.push('');
+        parts.push('---');
+        parts.push('');
+        // Original transcript
+        parts.push('**Original Raw Transcript (from Whisper):**');
+        parts.push('```');
+        parts.push(input.rawTranscript);
+        parts.push('```');
+        parts.push('');
+        // User corrections (if any)
+        if (input.userCorrectedText && input.userCorrectedText !== input.rawTranscript) {
+            parts.push('**User\'s Manual Corrections:**');
+            parts.push('```');
+            parts.push(input.userCorrectedText);
+            parts.push('```');
+            parts.push('');
+            // Show diff
+            const diff = DiffGenerator.generateUnified(input.rawTranscript, input.userCorrectedText);
+            parts.push('**Diff (What the user changed):**');
+            parts.push('```diff');
+            parts.push(diff);
+            parts.push('```');
+            parts.push('');
+            parts.push('**IMPORTANT**: Learn from these manual edits! Apply similar corrections throughout.');
+            parts.push('');
+        }
+        // Learned patterns
+        const patterns = this.correctionDb.getPatternsForPrompt(10);
+        if (patterns.length > 0) {
+            parts.push('**Learned Patterns (apply these automatically):**');
+            patterns.forEach(p => parts.push(`- ${p}`));
+            parts.push('');
+        }
+        // Custom instruction
+        if (input.userInstruction) {
+            parts.push('**Custom User Instruction:**');
+            parts.push(input.userInstruction);
+            parts.push('');
+        }
+        // RAG context
+        if (input.ragContext && input.ragContext.length > 0) {
+            parts.push('**Related Notes from Vault (for context linking):**');
+            input.ragContext.slice(0, 3).forEach((ctx, i) => {
+                parts.push(`${i + 1}. ${ctx.substring(0, 200)}...`);
+            });
+            parts.push('');
+        }
+        // Technical domain hint
+        if (input.technicalDomain && input.technicalDomain !== 'auto') {
+            parts.push(`**Domain Hint:** ${input.technicalDomain}`);
+            parts.push('');
+        }
+        parts.push('---');
+        parts.push('');
+        // Task instructions
+        parts.push('**Your Task:**');
+        parts.push('');
+        parts.push('1. **Apply technical formatting**:');
+        parts.push('   - Math expressions → LaTeX ($...$ inline, $$...$$ display)');
+        parts.push('   - Code → Markdown code blocks with language tags (bash, python, javascript, etc.)');
+        parts.push('   - Greek letters → LaTeX (\\alpha, \\beta, etc.)');
+        parts.push('   - Shell commands → ```bash or ```ash for BusyBox');
+        parts.push('');
+        parts.push('2. **Learn from user corrections**:');
+        parts.push('   - Notice patterns in manual edits (e.g., always capitalizing ~/Documents)');
+        parts.push('   - Apply similar corrections throughout the text');
+        parts.push('   - Respect user preferences and style');
+        parts.push('');
+        parts.push('3. **Generate metadata**:');
+        parts.push('   - Title: Concise, descriptive (max 60 chars), captures main topic');
+        parts.push('   - Summary: 2-3 sentences capturing key points');
+        parts.push('   - Tags: Relevant topic tags (3-5 tags)');
+        parts.push('');
+        parts.push('4. **Add context links**:');
+        parts.push('   - Create wikilinks [[like this]] for concepts mentioned in vault context');
+        parts.push('   - Only link to notes that actually exist (from RAG context above)');
+        parts.push('');
+        parts.push('5. **Detect correction patterns**:');
+        parts.push('   - Identify what patterns you applied (for learning)');
+        parts.push('   - Return these as detectedCorrections array');
+        parts.push('');
+        // Output format
+        parts.push('**Output Format (JSON):**');
+        parts.push('```json');
+        parts.push('{');
+        parts.push('  "title": "Generated title here",');
+        parts.push('  "summary": "2-3 sentence summary capturing main points",');
+        parts.push('  "body": "Fully formatted markdown content with LaTeX, code blocks, and wikilinks",');
+        parts.push('  "tags": ["tag1", "tag2", "tag3"],');
+        parts.push('  "detectedCorrections": [');
+        parts.push('    {"before": "tar cvf", "after": "tar -cvf", "rule": "shell_flags: add hyphen"},');
+        parts.push('    {"before": "documents", "after": "Documents", "rule": "capitalization: proper noun"}');
+        parts.push('  ]');
+        parts.push('}');
+        parts.push('```');
+        parts.push('');
+        // Important notes
+        parts.push('**Important:**');
+        parts.push('- Return ONLY valid JSON, no markdown wrappers or explanations');
+        parts.push('- The body should be complete, well-formatted Markdown');
+        parts.push('- Preserve the user\'s voice and natural language');
+        parts.push('- Don\'t over-format - keep conversational text natural');
+        parts.push('- Be conservative with wikilinks - only link when confident');
+        return parts.join('\n');
+    }
+    /**
+     * Call GPT-4 with unified prompt
+     */
+    callGPT4(prompt) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const response = yield fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${this.openaiApiKey}`,
+                },
+                body: JSON.stringify({
+                    model: this.gptModel,
+                    messages: [
+                        {
+                            role: 'system',
+                            content: 'You are an expert at refining voice transcripts with technical formatting, learning from user corrections, and generating structured output. ' +
+                                'You understand LaTeX, Markdown, programming languages (bash, python, javascript, go, etc.), and academic writing. ' +
+                                'You learn from user preferences and apply patterns consistently. ' +
+                                'You ALWAYS return valid JSON in the specified format.',
+                        },
+                        {
+                            role: 'user',
+                            content: prompt,
+                        },
+                    ],
+                    response_format: { type: 'json_object' },
+                    temperature: 0.3,
+                    max_tokens: 3000,
+                }),
+            });
+            if (!response.ok) {
+                throw new Error(`GPT-4 API error: ${response.statusText}`);
+            }
+            const data = yield response.json();
+            return data.choices[0].message.content;
+        });
+    }
+    /**
+     * Learn from detected corrections
+     */
+    learnFromCorrections(corrections) {
+        return __awaiter(this, void 0, void 0, function* () {
+            for (const corr of corrections) {
+                // Extract category from rule
+                const category = this.extractCategory(corr.rule);
+                // Add to correction database
+                yield this.correctionDb.addCorrection(corr.before, corr.after, category, undefined, corr.rule);
+            }
+        });
+    }
+    /**
+     * Extract category from rule description
+     */
+    extractCategory(rule) {
+        if (rule.includes('shell') || rule.includes('flag'))
+            return 'shell_flags';
+        if (rule.includes('capital'))
+            return 'capitalization';
+        if (rule.includes('punct'))
+            return 'punctuation';
+        if (rule.includes('code'))
+            return 'code_formatting';
+        if (rule.includes('math') || rule.includes('latex'))
+            return 'math_notation';
+        if (rule.includes('technical'))
+            return 'technical_term';
+        return 'custom';
+    }
+    /**
+     * Update API key
+     */
+    updateApiKey(apiKey) {
+        this.openaiApiKey = apiKey;
+    }
+    /**
+     * Update GPT model
+     */
+    updateGPTModel(model) {
+        this.gptModel = model;
+    }
+}
+
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
 class ZeddalPlugin extends obsidian.Plugin {
     onload() {
         return __awaiter(this, void 0, void 0, function* () {
@@ -25285,7 +28218,14 @@ class ZeddalPlugin extends obsidian.Plugin {
             this.vaultOps = new VaultOps(this.app);
             this.toast = new Toast();
             this.contextLinkService = new ContextLinkService(this.app);
+            this.qaSessionService = new QASessionService(this.config, this.vaultRAGService);
+            this.transcriptFormatter = new TranscriptFormatter(this.config);
             this.statusBar = new StatusBar(this.app, () => this.handleStatusBarRecordRequest());
+            // Initialize correction learning system
+            this.correctionDb = new CorrectionDatabase(this.app);
+            yield this.correctionDb.initialize();
+            // Initialize unified refinement service
+            this.unifiedRefinement = new UnifiedRefinementService(this.config, this.correctionDb);
             // Initialize RAG index (async, don't block plugin load)
             this.initializeRAGIndex();
             // Initialize MCP connections (async, don't block plugin load)
@@ -25354,6 +28294,10 @@ class ZeddalPlugin extends obsidian.Plugin {
             // Disconnect MCP clients
             if (this.mcpClientService) {
                 yield this.mcpClientService.disconnect();
+            }
+            // Cleanup correction database
+            if (this.correctionDb) {
+                yield this.correctionDb.destroy();
             }
             // Cleanup UI
             if (this.micButton) {
@@ -25543,7 +28487,7 @@ class ZeddalPlugin extends obsidian.Plugin {
                 // Save to recordings folder
                 const savedAudioFile = yield this.audioFileService.saveRecording(audioChunk);
                 // Open RecordModal with existing audio file
-                const modal = new RecordModal(this.app, this.recorderService, this.whisperService, this.llmRefineService, this.vaultOps, this.toast, this, this.contextLinkService, this.vaultRAGService, this.mcpClientService, this.audioFileService, savedAudioFile // Pass existing audio file
+                const modal = new RecordModal(this.app, this.recorderService, this.whisperService, this.llmRefineService, this.vaultOps, this.toast, this, this.contextLinkService, this.vaultRAGService, this.mcpClientService, this.audioFileService, this.qaSessionService, this.transcriptFormatter, this.correctionDb, this.unifiedRefinement, savedAudioFile // Pass existing audio file
                 );
                 modal.open();
                 this.toast.success('Audio file imported successfully');
@@ -25585,7 +28529,7 @@ class ZeddalPlugin extends obsidian.Plugin {
                     size: audioChunk.blob.size,
                 };
                 // Open RecordModal with existing audio file
-                const modal = new RecordModal(this.app, this.recorderService, this.whisperService, this.llmRefineService, this.vaultOps, this.toast, this, this.contextLinkService, this.vaultRAGService, this.mcpClientService, this.audioFileService, savedAudioFile);
+                const modal = new RecordModal(this.app, this.recorderService, this.whisperService, this.llmRefineService, this.vaultOps, this.toast, this, this.contextLinkService, this.vaultRAGService, this.mcpClientService, this.audioFileService, this.qaSessionService, this.transcriptFormatter, this.correctionDb, this.unifiedRefinement, savedAudioFile);
                 modal.open();
                 this.toast.success('Audio file loaded for re-processing');
             }
@@ -26011,6 +28955,359 @@ class ZeddalSettingTab extends obsidian.PluginSettingTab {
                 });
             }
         }
+        // Technical Content Formatting Settings
+        containerEl.createEl('h3', { text: 'Technical Content Formatting' });
+        containerEl.createEl('p', {
+            text: 'Automatically format mathematical expressions, code blocks, and scientific symbols in transcriptions using LaTeX and Markdown.',
+            cls: 'setting-item-description',
+        });
+        // Enable Technical Formatting
+        new obsidian.Setting(containerEl)
+            .setName('Enable Technical Formatting')
+            .setDesc('Use GPT-4 to format math, code, and scientific symbols in transcriptions')
+            .addToggle((toggle) => toggle.setValue(this.plugin.settings.formatTechnicalContent).onChange((value) => __awaiter(this, void 0, void 0, function* () {
+            this.plugin.settings.formatTechnicalContent = value;
+            yield this.plugin.saveSettings();
+        })));
+        // Technical Domain
+        new obsidian.Setting(containerEl)
+            .setName('Technical Domain')
+            .setDesc('Hint for formatting: auto-detect, math, code, or science')
+            .addDropdown((dropdown) => dropdown
+            .addOption('auto', 'Auto-detect')
+            .addOption('math', 'Mathematics')
+            .addOption('code', 'Programming/Code')
+            .addOption('science', 'Science/Chemistry')
+            .setValue(this.plugin.settings.technicalDomain)
+            .onChange((value) => __awaiter(this, void 0, void 0, function* () {
+            this.plugin.settings.technicalDomain = value;
+            yield this.plugin.saveSettings();
+        })));
+        // Enable Inline LaTeX
+        new obsidian.Setting(containerEl)
+            .setName('Inline LaTeX ($...$)')
+            .setDesc('Format math expressions as inline LaTeX, e.g., "x squared" → "$x^2$"')
+            .addToggle((toggle) => toggle.setValue(this.plugin.settings.enableInlineLaTeX).onChange((value) => __awaiter(this, void 0, void 0, function* () {
+            this.plugin.settings.enableInlineLaTeX = value;
+            yield this.plugin.saveSettings();
+        })));
+        // Enable Display LaTeX
+        new obsidian.Setting(containerEl)
+            .setName('Display LaTeX ($$...$$)')
+            .setDesc('Format standalone equations as display LaTeX blocks')
+            .addToggle((toggle) => toggle.setValue(this.plugin.settings.enableDisplayLaTeX).onChange((value) => __awaiter(this, void 0, void 0, function* () {
+            this.plugin.settings.enableDisplayLaTeX = value;
+            yield this.plugin.saveSettings();
+        })));
+        // Enable Code Blocks
+        new obsidian.Setting(containerEl)
+            .setName('Code Block Formatting')
+            .setDesc('Format code as Markdown code blocks with language detection')
+            .addToggle((toggle) => toggle.setValue(this.plugin.settings.enableCodeBlocks).onChange((value) => __awaiter(this, void 0, void 0, function* () {
+            this.plugin.settings.enableCodeBlocks = value;
+            yield this.plugin.saveSettings();
+        })));
+        // Example section
+        containerEl.createEl('h4', { text: 'Examples' });
+        const examplesDiv = containerEl.createDiv();
+        examplesDiv.style.padding = '12px';
+        examplesDiv.style.backgroundColor = 'var(--background-secondary)';
+        examplesDiv.style.borderRadius = '6px';
+        examplesDiv.style.fontFamily = 'var(--font-monospace)';
+        examplesDiv.style.fontSize = '0.9em';
+        const examples = [
+            { input: '"x squared plus y squared"', output: '"$x^2 + y^2$"' },
+            { input: '"integral from zero to pi"', output: '"$\\int_0^\\pi$"' },
+            { input: '"alpha times beta"', output: '"$\\alpha \\times \\beta$"' },
+            { input: '"function add x y returns x plus y"', output: '"`function add(x, y) { return x + y; }`"' },
+        ];
+        examples.forEach(ex => {
+            const line = examplesDiv.createDiv();
+            line.style.marginBottom = '4px';
+            line.innerHTML = `${ex.input} → ${ex.output}`;
+        });
+        // Transcript Refinement Settings
+        containerEl.createEl('h3', { text: 'Transcript Refinement' });
+        containerEl.createEl('p', {
+            text: 'Refine transcriptions with rule-based corrections, manual editing, and AI assistance',
+            cls: 'setting-item-description'
+        });
+        // Enable Quick Fixes
+        new obsidian.Setting(containerEl)
+            .setName('Enable Quick Fixes')
+            .setDesc('Apply rule-based corrections (shell flags, path capitalization, typos)')
+            .addToggle((toggle) => toggle.setValue(this.plugin.settings.enableQuickFixes).onChange((value) => __awaiter(this, void 0, void 0, function* () {
+            this.plugin.settings.enableQuickFixes = value;
+            yield this.plugin.saveSettings();
+        })));
+        // Enable Local LLM
+        new obsidian.Setting(containerEl)
+            .setName('Enable Local LLM')
+            .setDesc('Use local LLM for AI-powered refinement (Ollama, llama.cpp, etc.)')
+            .addToggle((toggle) => toggle.setValue(this.plugin.settings.enableLocalLLM).onChange((value) => __awaiter(this, void 0, void 0, function* () {
+            this.plugin.settings.enableLocalLLM = value;
+            yield this.plugin.saveSettings();
+        })));
+        // Local LLM Provider
+        new obsidian.Setting(containerEl)
+            .setName('Local LLM Provider')
+            .setDesc('Choose your local LLM provider')
+            .addDropdown((dropdown) => dropdown
+            .addOption('ollama', 'Ollama')
+            .addOption('llamacpp', 'llama.cpp')
+            .addOption('lmstudio', 'LM Studio')
+            .addOption('openai-compatible', 'OpenAI-Compatible')
+            .addOption('openai', 'OpenAI (Cloud)')
+            .setValue(this.plugin.settings.localLLMProvider)
+            .onChange((value) => __awaiter(this, void 0, void 0, function* () {
+            this.plugin.settings.localLLMProvider = value;
+            yield this.plugin.saveSettings();
+        })));
+        // Local LLM Base URL
+        new obsidian.Setting(containerEl)
+            .setName('Local LLM Base URL')
+            .setDesc('Base URL for local LLM (e.g., http://localhost:11434 for Ollama)')
+            .addText((text) => text
+            .setPlaceholder('http://localhost:11434')
+            .setValue(this.plugin.settings.localLLMBaseUrl)
+            .onChange((value) => __awaiter(this, void 0, void 0, function* () {
+            this.plugin.settings.localLLMBaseUrl = value;
+            yield this.plugin.saveSettings();
+        })));
+        // Local LLM Model
+        new obsidian.Setting(containerEl)
+            .setName('Local LLM Model')
+            .setDesc('Model name (e.g., llama3.2, mistral, qwen2.5)')
+            .addText((text) => text
+            .setPlaceholder('llama3.2')
+            .setValue(this.plugin.settings.localLLMModel)
+            .onChange((value) => __awaiter(this, void 0, void 0, function* () {
+            this.plugin.settings.localLLMModel = value;
+            yield this.plugin.saveSettings();
+        })));
+        // Local LLM API Key (optional)
+        new obsidian.Setting(containerEl)
+            .setName('Local LLM API Key')
+            .setDesc('Optional API key for custom endpoints (leave blank for local models)')
+            .addText((text) => text
+            .setPlaceholder('Optional')
+            .setValue(this.plugin.settings.localLLMApiKey)
+            .onChange((value) => __awaiter(this, void 0, void 0, function* () {
+            this.plugin.settings.localLLMApiKey = value;
+            yield this.plugin.saveSettings();
+        })));
+        // Help text
+        const helpDiv = containerEl.createDiv();
+        helpDiv.style.padding = '12px';
+        helpDiv.style.backgroundColor = 'var(--background-secondary)';
+        helpDiv.style.borderRadius = '6px';
+        helpDiv.style.marginTop = '12px';
+        helpDiv.style.fontSize = '0.9em';
+        helpDiv.createEl('p', {
+            text: '💡 Refinement Tiers:',
+            cls: 'setting-item-name'
+        });
+        helpDiv.createEl('p', {
+            text: '• Tier 1: Manual editing - Edit transcription directly in results window'
+        });
+        helpDiv.createEl('p', {
+            text: '• Tier 2: Quick Fixes - Rule-based corrections (free, <100ms)'
+        });
+        helpDiv.createEl('p', {
+            text: '• Tier 3: AI Refinement - Context-aware improvements with voice/text instructions'
+        });
+        helpDiv.createEl('p', {
+            text: ''
+        });
+        helpDiv.createEl('p', {
+            text: '🖥️ Recommended Local Models:',
+            cls: 'setting-item-name'
+        });
+        helpDiv.createEl('p', {
+            text: '• Ollama: llama3.2, qwen2.5, mistral'
+        });
+        helpDiv.createEl('p', {
+            text: '• LM Studio: Any GGUF model'
+        });
+        helpDiv.createEl('p', {
+            text: '• llama.cpp: Custom models'
+        });
+        // Correction Learning Settings
+        containerEl.createEl('h3', { text: 'Correction Learning' });
+        containerEl.createEl('p', {
+            text: 'Automatically learn from your manual corrections to improve future transcriptions. The system builds a personal correction database and applies patterns with high confidence.',
+            cls: 'setting-item-description'
+        });
+        // Enable Correction Learning
+        new obsidian.Setting(containerEl)
+            .setName('Enable Correction Learning')
+            .setDesc('Learn from manual transcript corrections and apply patterns automatically')
+            .addToggle((toggle) => toggle.setValue(this.plugin.settings.enableCorrectionLearning).onChange((value) => __awaiter(this, void 0, void 0, function* () {
+            this.plugin.settings.enableCorrectionLearning = value;
+            yield this.plugin.saveSettings();
+        })));
+        // Show Correction Window
+        new obsidian.Setting(containerEl)
+            .setName('Show Correction Window')
+            .setDesc('Display editable transcript immediately after Whisper transcription (before GPT refinement)')
+            .addToggle((toggle) => toggle.setValue(this.plugin.settings.showCorrectionWindow).onChange((value) => __awaiter(this, void 0, void 0, function* () {
+            this.plugin.settings.showCorrectionWindow = value;
+            yield this.plugin.saveSettings();
+        })));
+        // Auto-Apply Threshold
+        new obsidian.Setting(containerEl)
+            .setName('Auto-Apply Threshold')
+            .setDesc('Confidence threshold for automatic corrections (0.5-1.0, default: 0.9)')
+            .addSlider((slider) => slider
+            .setLimits(0.5, 1.0, 0.05)
+            .setValue(this.plugin.settings.autoApplyThreshold)
+            .setDynamicTooltip()
+            .onChange((value) => __awaiter(this, void 0, void 0, function* () {
+            this.plugin.settings.autoApplyThreshold = value;
+            yield this.plugin.saveSettings();
+        })));
+        // Show Suggested Corrections
+        new obsidian.Setting(containerEl)
+            .setName('Show Suggested Corrections')
+            .setDesc('Display learned correction suggestions during editing')
+            .addToggle((toggle) => toggle.setValue(this.plugin.settings.showSuggestedCorrections).onChange((value) => __awaiter(this, void 0, void 0, function* () {
+            this.plugin.settings.showSuggestedCorrections = value;
+            yield this.plugin.saveSettings();
+        })));
+        // Correction Analytics Display
+        if (this.plugin.correctionDb) {
+            const analytics = this.plugin.correctionDb.getAnalytics();
+            const analyticsDiv = containerEl.createDiv();
+            analyticsDiv.style.padding = '12px';
+            analyticsDiv.style.backgroundColor = 'var(--background-secondary)';
+            analyticsDiv.style.borderRadius = '6px';
+            analyticsDiv.style.marginTop = '12px';
+            analyticsDiv.style.marginBottom = '12px';
+            analyticsDiv.createEl('h4', { text: '📊 Learning Statistics' });
+            const statsGrid = analyticsDiv.createDiv();
+            statsGrid.style.display = 'grid';
+            statsGrid.style.gridTemplateColumns = '1fr 1fr';
+            statsGrid.style.gap = '8px';
+            statsGrid.style.marginTop = '8px';
+            const statItem1 = statsGrid.createDiv();
+            statItem1.innerHTML = `<strong>Total Corrections:</strong> ${analytics.totalCorrections}`;
+            const statItem2 = statsGrid.createDiv();
+            const autoApplyPct = (analytics.autoApplyRate * 100).toFixed(0);
+            statItem2.innerHTML = `<strong>Auto-Apply Rate:</strong> ${autoApplyPct}%`;
+            if (analytics.topPatterns.length > 0) {
+                analyticsDiv.createEl('h5', { text: 'Top Patterns:' });
+                const patternList = analyticsDiv.createEl('ul');
+                patternList.style.marginTop = '8px';
+                patternList.style.fontSize = '0.9em';
+                analytics.topPatterns.slice(0, 5).forEach(item => {
+                    const li = patternList.createEl('li');
+                    li.innerHTML = `"${item.pattern.before}" → "${item.pattern.after}" <em>(used ${item.frequency}x)</em>`;
+                });
+            }
+        }
+        // Correction Database Management
+        containerEl.createEl('h4', { text: 'Database Management' });
+        // Export Corrections
+        new obsidian.Setting(containerEl)
+            .setName('Export Corrections')
+            .setDesc('Export your correction patterns to share or backup')
+            .addButton((button) => button
+            .setButtonText('Export')
+            .onClick(() => __awaiter(this, void 0, void 0, function* () {
+            try {
+                const exported = this.plugin.correctionDb.exportPatterns(false);
+                const blob = new Blob([exported], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `zeddal-corrections-${Date.now()}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+                this.plugin.toast.success('Corrections exported successfully');
+            }
+            catch (error) {
+                console.error('Export failed:', error);
+                this.plugin.toast.error('Failed to export corrections');
+            }
+        })));
+        // Import Corrections
+        new obsidian.Setting(containerEl)
+            .setName('Import Corrections')
+            .setDesc('Import correction patterns from a JSON file')
+            .addButton((button) => button
+            .setButtonText('Import')
+            .onClick(() => __awaiter(this, void 0, void 0, function* () {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'application/json';
+            input.onchange = (e) => __awaiter(this, void 0, void 0, function* () {
+                var _a;
+                const file = (_a = e.target.files) === null || _a === void 0 ? void 0 : _a[0];
+                if (!file)
+                    return;
+                try {
+                    const text = yield file.text();
+                    const count = yield this.plugin.correctionDb.importPatterns(text, true);
+                    this.plugin.toast.success(`Imported ${count} correction pattern(s)`);
+                    this.display(); // Refresh to show updated analytics
+                }
+                catch (error) {
+                    console.error('Import failed:', error);
+                    this.plugin.toast.error('Failed to import corrections');
+                }
+            });
+            input.click();
+        })));
+        // Clear All Corrections
+        new obsidian.Setting(containerEl)
+            .setName('Clear All Corrections')
+            .setDesc('Delete all learned correction patterns (cannot be undone)')
+            .addButton((button) => button
+            .setButtonText('Clear All')
+            .setWarning()
+            .onClick(() => __awaiter(this, void 0, void 0, function* () {
+            const confirmed = confirm('Are you sure you want to delete all learned corrections? This cannot be undone.');
+            if (confirmed) {
+                yield this.plugin.correctionDb.clearAll();
+                this.plugin.toast.success('All corrections cleared');
+                this.display(); // Refresh to show updated analytics
+            }
+        })));
+        // Advanced Settings (Future Features)
+        containerEl.createEl('h4', { text: 'Advanced (Future Features)' });
+        // Enable Correction Sharing
+        new obsidian.Setting(containerEl)
+            .setName('Enable Correction Sharing')
+            .setDesc('Allow exporting/sharing patterns with community (future feature)')
+            .addToggle((toggle) => toggle
+            .setValue(this.plugin.settings.enableCorrectionSharing)
+            .setDisabled(true)
+            .onChange((value) => __awaiter(this, void 0, void 0, function* () {
+            this.plugin.settings.enableCorrectionSharing = value;
+            yield this.plugin.saveSettings();
+        })));
+        // Enable Cloud Backup
+        new obsidian.Setting(containerEl)
+            .setName('Enable Cloud Backup')
+            .setDesc('Sync corrections to cloud storage (future feature)')
+            .addToggle((toggle) => toggle
+            .setValue(this.plugin.settings.enableCloudBackup)
+            .setDisabled(true)
+            .onChange((value) => __awaiter(this, void 0, void 0, function* () {
+            this.plugin.settings.enableCloudBackup = value;
+            yield this.plugin.saveSettings();
+        })));
+        // Enable Fine-Tuning
+        new obsidian.Setting(containerEl)
+            .setName('Enable Model Fine-Tuning')
+            .setDesc('Use corrections for OpenAI model fine-tuning (future feature)')
+            .addToggle((toggle) => toggle
+            .setValue(this.plugin.settings.enableFineTuning)
+            .setDisabled(true)
+            .onChange((value) => __awaiter(this, void 0, void 0, function* () {
+            this.plugin.settings.enableFineTuning = value;
+            yield this.plugin.saveSettings();
+        })));
     }
     applyMCPSetting(value) {
         return __awaiter(this, void 0, void 0, function* () {

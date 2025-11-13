@@ -90,7 +90,11 @@ export class MicButton {
       this.contextLinkService,
       this.vaultRAGService,
       this.plugin.mcpClientService,
-      this.audioFileService
+      this.audioFileService,
+      this.plugin.qaSessionService,
+      this.plugin.transcriptFormatter,
+      this.plugin.correctionDb,
+      this.plugin.unifiedRefinement
     );
     modal.open();
   }

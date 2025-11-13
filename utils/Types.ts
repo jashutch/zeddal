@@ -49,6 +49,15 @@ export interface RecordingState {
   confidence: number;
 }
 
+/**
+ * Technical domain for transcript formatting
+ * - math: Mathematics, calculus, algebra, etc.
+ * - code: Programming, algorithms, software engineering
+ * - science: Chemistry, physics, biology formulas
+ * - auto: Automatically detect domain from content
+ */
+export type TechnicalDomain = 'math' | 'code' | 'science' | 'auto';
+
 export interface ZeddalSettings {
   openaiApiKey: string;
   openaiModel: string;
@@ -78,6 +87,38 @@ export interface ZeddalSettings {
   // MCP settings
   enableMCP: boolean; // Enable Model Context Protocol integration
   mcpServers: MCPServerConfig[]; // Configured MCP servers
+  // Q&A Session settings
+  enableQAMode: boolean; // Enable Q&A session mode
+  defaultLecturerLabel: string; // Default lecturer label
+  defaultStudentLabel: string; // Default student label prefix
+  minPauseDuration: number; // Seconds to detect speaker change
+  autoSummarize: boolean; // Auto-generate summaries
+  includeRAGContext: boolean; // Pull context from vault for Q&A
+  ragTopKForQA: number; // Context chunks for Q&A sessions
+  qaExportFormat: 'markdown' | 'json' | 'both'; // Export format
+  qaSaveFolder: string; // Folder for Q&A sessions
+  promptForLabels: boolean; // Ask for speaker labels before processing
+  // Technical Content Formatting settings
+  formatTechnicalContent: boolean; // Enable LaTeX and code formatting
+  technicalDomain: TechnicalDomain; // Domain hint for formatting
+  enableInlineLaTeX: boolean; // Enable inline LaTeX ($...$)
+  enableDisplayLaTeX: boolean; // Enable display LaTeX ($$...$$)
+  enableCodeBlocks: boolean; // Enable code block formatting
+  // Transcript Refinement settings
+  enableQuickFixes: boolean; // Enable rule-based quick fixes
+  enableLocalLLM: boolean; // Enable local LLM refinement
+  localLLMProvider: 'ollama' | 'llamacpp' | 'lmstudio' | 'openai-compatible' | 'openai'; // LLM provider type
+  localLLMBaseUrl: string; // Base URL for local LLM (e.g., http://localhost:11434)
+  localLLMModel: string; // Model name (e.g., llama3.2, mistral)
+  localLLMApiKey: string; // Optional API key for custom endpoints
+  // Correction Learning settings
+  enableCorrectionLearning: boolean; // Learn from user corrections
+  showCorrectionWindow: boolean; // Show correction window immediately after transcription
+  autoApplyThreshold: number; // Confidence threshold for auto-apply (0-1, e.g. 0.9 = 90%)
+  enableCorrectionSharing: boolean; // Allow exporting/sharing correction patterns
+  enableCloudBackup: boolean; // Future: backup corrections to cloud
+  enableFineTuning: boolean; // Future: use corrections for model fine-tuning
+  showSuggestedCorrections: boolean; // Show suggestions from learned patterns
 }
 
 export interface AudioChunk {

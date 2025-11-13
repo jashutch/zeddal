@@ -232,6 +232,10 @@ export class RecordingHistoryModal extends Modal {
         this.plugin.vaultRAGService,
         this.plugin.mcpClientService,
         this.audioFileService,
+        this.plugin.qaSessionService,
+        this.plugin.transcriptFormatter,
+        this.plugin.correctionDb,
+        this.plugin.unifiedRefinement,
         recording  // Pass the saved audio file
       );
       modal.open();
