@@ -3,132 +3,108 @@
 // Change Date: 2029-01-01 → Apache 2.0 License
 
 /**
- * WhisperService: OpenAI Whisper transcription with confidence tracking
- * Architecture: Converts audio chunks to text using OpenAI whisper-1 model
+ * WhisperService: Unified transcription service with multiple backends
+ * Architecture: Facade pattern - delegates to OpenAI API (default), whisper.cpp, or other backends
+ *
+ * IMPORTANT: Maintains backward compatibility - all existing functionality preserved
  */
 
-import OpenAI from 'openai';
 import { eventBus } from '../utils/EventBus';
 import { TranscriptionChunk, AudioChunk } from '../utils/Types';
 import { Config } from '../utils/Config';
+import { IWhisperBackend } from './whisper/IWhisperBackend';
+import { OpenAIWhisperBackend } from './whisper/OpenAIWhisperBackend';
+import { LocalWhisperBackend } from './whisper/LocalWhisperBackend';
 
 export class WhisperService {
-  private openai: OpenAI | null = null;
   private config: Config;
+  private backend: IWhisperBackend;
 
   constructor(config: Config) {
     this.config = config;
-    this.initializeClient();
+    this.backend = this.selectBackend();
   }
 
   /**
-   * Initialize OpenAI client
+   * Select appropriate backend based on configuration
+   * Falls back to OpenAI if local backend isn't properly configured
    */
-  private initializeClient(): void {
-    const apiKey = this.config.get('openaiApiKey');
-    if (!apiKey) {
-      console.warn('OpenAI API key not configured');
-      return;
-    }
+  private selectBackend(): IWhisperBackend {
+    const backendType = this.config.get('whisperBackend');
 
-    this.openai = new OpenAI({
-      apiKey,
-      dangerouslyAllowBrowser: true, // Note: In production, proxy through backend
-    });
+    console.log(`[WhisperService] Requested backend: ${backendType}`);
+
+    // Try to create requested backend
+    let backend: IWhisperBackend;
+
+    switch (backendType) {
+      case 'local-cpp': {
+        const localBackend = new LocalWhisperBackend(this.config);
+        if (localBackend.isReady()) {
+          console.log('[WhisperService] Using local whisper.cpp backend');
+          return localBackend;
+        } else {
+          console.warn('[WhisperService] Local whisper.cpp not configured, falling back to OpenAI');
+          // Fall through to OpenAI
+        }
+      }
+      // Fall through to default if local not ready
+      case 'openai':
+      default:
+        backend = new OpenAIWhisperBackend(this.config);
+        console.log('[WhisperService] Using OpenAI Whisper API backend');
+        return backend;
+    }
   }
 
   /**
-   * Update API key and reinitialize client
+   * Update backend when settings change
+   */
+  updateBackend(): void {
+    const oldBackend = this.backend.getName();
+    this.backend = this.selectBackend();
+    console.log(`[WhisperService] Backend changed from ${oldBackend} to ${this.backend.getName()}`);
+  }
+
+  /**
+   * Update API key (for OpenAI backend compatibility)
+   * Maintains backward compatibility with existing code
    */
   updateApiKey(apiKey: string): void {
     this.config.set('openaiApiKey', apiKey);
-    this.initializeClient();
+    if (this.config.get('whisperBackend') === 'openai') {
+      this.updateBackend();
+    }
   }
 
   /**
-   * Transcribe audio chunk using OpenAI Whisper
+   * Transcribe audio chunk using selected backend
+   * Maintains existing API signature
    */
   async transcribe(audioChunk: AudioChunk): Promise<TranscriptionChunk> {
-    const apiKey = this.config.get('openaiApiKey');
-    if (!apiKey) {
-      throw new Error('OpenAI API key not configured. Please set API key.');
-    }
-
     try {
-      // Create FormData for multipart upload
-      const formData = new FormData();
-
-      // Convert Blob to File with proper extension
-      // Use the actual MIME type from the blob, or default to audio/webm
-      const mimeType = audioChunk.blob.type || 'audio/webm';
-
-      // Determine file extension based on MIME type
-      let extension = 'webm';
-      if (mimeType.includes('mp4')) extension = 'mp4';
-      else if (mimeType.includes('mpeg')) extension = 'mpeg';
-      else if (mimeType.includes('ogg')) extension = 'ogg';
-      else if (mimeType.includes('wav')) extension = 'wav';
-
-      const file = new File(
-        [audioChunk.blob],
-        `audio-${audioChunk.timestamp}.${extension}`,
-        { type: mimeType }
-      );
-
-      console.log('Audio file details:', {
-        size: file.size,
-        type: file.type,
-        name: file.name,
-      });
-
-      // Check minimum file size (empty recordings are ~125 bytes)
-      if (file.size < 1000) {
-        throw new Error('Recording too short or empty. Please record for at least 1-2 seconds.');
-      }
-
-      formData.append('file', file);
-      formData.append('model', this.config.get('whisperModel'));
-      formData.append('response_format', 'json'); // Use simple json instead of verbose_json
-
-      // Direct fetch to OpenAI API (bypasses SDK CORS issues)
-      const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-        },
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(`API error: ${response.status} - ${JSON.stringify(errorData)}`);
-      }
-
-      const data = await response.json();
-
-      // For simple json format, we don't get confidence scores
-      // Default to 1.0 for now (Phase 2 can use verbose_json if needed)
-      const confidence = 1.0;
-
-      const chunk: TranscriptionChunk = {
-        text: data.text ? data.text.trim() : '',
-        confidence,
-        timestamp: audioChunk.timestamp,
-      };
-
-      eventBus.emit('transcribed', chunk);
-
-      return chunk;
+      return await this.backend.transcribe(audioChunk);
     } catch (error) {
-      console.error('Whisper transcription error:', error);
-      eventBus.emit('error', {
-        message: 'Transcription failed',
-        error,
-      });
+      // If local backend fails, try falling back to OpenAI
+      if (this.config.get('whisperBackend') === 'local-cpp') {
+        console.warn('[WhisperService] Local backend failed, attempting OpenAI fallback');
+        try {
+          const fallbackBackend = new OpenAIWhisperBackend(this.config);
+          if (fallbackBackend.isReady()) {
+            return await fallbackBackend.transcribe(audioChunk);
+          }
+        } catch (fallbackError) {
+          console.error('[WhisperService] Fallback also failed:', fallbackError);
+        }
+      }
       throw error;
     }
   }
 
+  /**
+   * Transcribe blob and return text
+   * Maintains existing API signature
+   */
   async transcribeBlobPartial(blob: Blob): Promise<string> {
     const chunk: AudioChunk = {
       blob,
@@ -141,6 +117,7 @@ export class WhisperService {
 
   /**
    * Transcribe multiple audio chunks in sequence
+   * Maintains existing API signature
    */
   async transcribeMultiple(
     audioChunks: AudioChunk[]
@@ -152,7 +129,7 @@ export class WhisperService {
         const result = await this.transcribe(chunk);
         results.push(result);
       } catch (error) {
-        console.error('Failed to transcribe chunk:', error);
+        console.error('[WhisperService] Failed to transcribe chunk:', error);
         // Continue with next chunk even if one fails
       }
     }
@@ -163,6 +140,7 @@ export class WhisperService {
   /**
    * Stream transcription (for future real-time implementation)
    * Currently processes chunks sequentially
+   * Maintains existing API signature
    */
   async stream(
     audioChunks: AudioChunk[],
@@ -173,7 +151,7 @@ export class WhisperService {
         const result = await this.transcribe(audioChunk);
         onChunk(result);
       } catch (error) {
-        console.error('Stream transcription error:', error);
+        console.error('[WhisperService] Stream transcription error:', error);
         eventBus.emit('error', {
           message: 'Stream transcription failed',
           error,
@@ -184,6 +162,7 @@ export class WhisperService {
 
   /**
    * Combine multiple transcription chunks into single text
+   * Maintains existing API signature
    */
   combineChunks(chunks: TranscriptionChunk[]): {
     text: string;
@@ -205,9 +184,16 @@ export class WhisperService {
 
   /**
    * Check if service is ready
+   * Maintains existing API signature
    */
   isReady(): boolean {
-    const apiKey = this.config.get('openaiApiKey');
-    return apiKey !== null && apiKey !== undefined && apiKey.length > 0;
+    return this.backend.isReady();
+  }
+
+  /**
+   * Get current backend name (for debugging/display)
+   */
+  getBackendName(): string {
+    return this.backend.getName();
   }
 }

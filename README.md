@@ -17,8 +17,9 @@ Transform your voice into perfectly formatted, context-aware notes with automati
 ### 🌍 Multilingual Transcription
 - **100+ Languages Supported**: Automatic language detection across all major languages
 - **Automatic Translation**: Optional translation to English for multilingual workflows
+- **Flexible Backend**: Choose between cloud-based OpenAI API or local whisper.cpp for offline transcription
 - **Zero Configuration**: No language selection needed—just speak naturally
-- **High Accuracy**: Powered by OpenAI's Whisper API
+- **High Accuracy**: Powered by OpenAI's Whisper (cloud or local)
 
 ### ✨ AI Refinement
 - **Intelligent Enhancement**: GPT-4 automatically improves clarity and readability
@@ -93,6 +94,42 @@ Once approved by Obsidian:
 
 ### 3. Advanced Features
 
+#### Enable Local Whisper (Offline Transcription)
+1. Install whisper.cpp:
+   ```bash
+   # macOS (Homebrew)
+   brew install whisper-cpp
+
+   # Or build from source
+   git clone https://github.com/ggerganov/whisper.cpp
+   cd whisper.cpp
+   make
+   ```
+
+2. Download a GGML model:
+   ```bash
+   # Download base English model (~150MB)
+   bash models/download-ggml-model.sh base.en
+
+   # Or download larger model for better accuracy
+   bash models/download-ggml-model.sh medium.en
+   ```
+
+3. Configure in Zeddal Settings:
+   - Settings → Zeddal → Whisper Backend Configuration
+   - Transcription Backend: Select "Local whisper.cpp (offline)"
+   - Whisper.cpp Binary Path: `/usr/local/bin/whisper` (or your build path)
+   - Whisper Model Path: `/path/to/ggml-base.en.bin`
+   - Click "Test Configuration" to verify setup
+
+**Benefits of Local Whisper:**
+- ✅ No API costs for transcription
+- ✅ Works completely offline
+- ✅ Faster for small recordings
+- ✅ Private - audio never leaves your computer
+- ⚠️ Requires initial setup and model download
+- ⚠️ GPT-4 refinement still requires internet (optional)
+
 #### Enable RAG Context
 1. Settings → Zeddal → RAG Settings
 2. Enable "Use RAG Context"
@@ -122,10 +159,19 @@ Once approved by Obsidian:
 
 | Setting | Description | Default |
 |---------|-------------|---------|
-| **OpenAI API Key** | Your OpenAI API key (required) | - |
+| **OpenAI API Key** | Your OpenAI API key (required for cloud services) | - |
 | **GPT Model** | Model for refinement | `gpt-4-turbo` |
-| **Whisper Model** | Transcription model | `whisper-1` |
+| **Whisper Model** | Transcription model (cloud only) | `whisper-1` |
 | **Embedding Model** | For RAG context | `text-embedding-3-small` |
+
+### Whisper Backend Settings
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| **Transcription Backend** | Cloud (OpenAI API) or Local (whisper.cpp) | `openai` |
+| **Whisper.cpp Binary Path** | Path to whisper.cpp executable | `/usr/local/bin/whisper` |
+| **Whisper Model Path** | Path to GGML model file | - |
+| **Whisper Language** | Language code or `auto` for detection | `auto` |
 
 ### Recording Settings
 
@@ -238,21 +284,48 @@ Get your key at: https://platform.openai.com/api-keys
 ### High API costs
 
 **Solutions**:
+- Switch to local whisper.cpp for free transcription
 - Disable auto-refinement and refine selectively
 - Reduce RAG top-K results
 - Use smaller embedding model
 - Disable MCP if not needed
+
+### Local whisper.cpp not working
+
+**Possible causes**:
+- Binary not found or not executable
+- Model file path incorrect or corrupted
+- Unsupported audio format
+
+**Solutions**:
+1. Verify whisper.cpp binary path:
+   ```bash
+   which whisper  # Should return path like /usr/local/bin/whisper
+   ```
+2. Test whisper.cpp directly:
+   ```bash
+   /usr/local/bin/whisper -m /path/to/model.bin -f test.wav
+   ```
+3. Check model file exists:
+   ```bash
+   ls -lh /path/to/ggml-base.en.bin
+   ```
+4. Re-download model if corrupted
+5. Click "Test Configuration" in settings to verify
+6. Check console (Cmd/Ctrl+Shift+I) for error details
+7. Try falling back to OpenAI API if issues persist
 
 ---
 
 ## Privacy & Security
 
 ### Data Handling
-- **Audio Processing**: Recordings sent to OpenAI Whisper API
-- **Text Refinement**: Transcriptions processed by OpenAI GPT-4
+- **Audio Processing**: Recordings sent to OpenAI Whisper API (or processed locally with whisper.cpp)
+- **Text Refinement**: Transcriptions processed by OpenAI GPT-4 (optional)
 - **Embeddings**: Vault content embedded via OpenAI Embeddings API
 - **Local Storage**: Audio files and metadata stored in your vault
 - **No Telemetry**: Zeddal does not collect usage data
+- **Local Option**: Use whisper.cpp for 100% offline transcription (no cloud processing)
 
 ### OpenAI Data Policy
 Per [OpenAI's data policy](https://openai.com/policies/api-data-usage-policies):
@@ -304,6 +377,10 @@ zeddal/
 ├── services/          # Core business logic
 │   ├── RecorderService.ts
 │   ├── WhisperService.ts
+│   ├── whisper/
+│   │   ├── IWhisperBackend.ts        # Backend abstraction interface
+│   │   ├── OpenAIWhisperBackend.ts   # Cloud transcription
+│   │   └── LocalWhisperBackend.ts    # Local whisper.cpp
 │   ├── LLMRefineService.ts
 │   ├── VaultRAGService.ts
 │   ├── MCPClientService.ts
@@ -336,10 +413,14 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for gui
 
 ## Roadmap
 
+### Recently Completed
+- [x] **Offline transcription (local Whisper models)** - v1.2.0: Use whisper.cpp for free, private, offline transcription
+- [x] **Correction Learning System** - v1.2.0: Learn from manual corrections, 60-70% cost reduction
+- [x] **Unified Refinement Architecture** - v1.2.0: Single GPT call replacing 3 separate API calls
+
 ### Planned Features
 - [ ] Custom prompt templates for refinement
 - [ ] Speaker diarization for multi-person recordings
-- [ ] Offline transcription (local Whisper models)
 - [ ] Custom LLM provider support (Anthropic, local models)
 - [ ] Audio annotation and timestamping
 - [ ] Batch processing for multiple recordings

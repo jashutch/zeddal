@@ -70,6 +70,11 @@ export const DEFAULT_SETTINGS: ZeddalSettings = {
   enableCloudBackup: false, // Future feature
   enableFineTuning: false, // Future feature
   showSuggestedCorrections: true, // Show suggestions by default
+  // Whisper Backend settings
+  whisperBackend: 'openai', // Default to OpenAI API
+  whisperCppPath: '/usr/local/bin/whisper', // Default whisper.cpp binary path
+  whisperModelPath: '', // User must configure model path
+  whisperLanguage: 'auto', // Auto-detect language
 };
 
 export class Config {

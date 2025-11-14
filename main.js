@@ -1,11 +1,32 @@
 'use strict';
 
 var obsidian = require('obsidian');
-var require$$0$2 = require('child_process');
-var require$$0$1 = require('path');
-var require$$0 = require('fs');
+var require$$0 = require('child_process');
+var util$2 = require('util');
+var path$3 = require('path');
+var fs$1 = require('fs');
 var process$1 = require('node:process');
 var node_stream = require('node:stream');
+
+function _interopNamespaceDefault(e) {
+    var n = Object.create(null);
+    if (e) {
+        Object.keys(e).forEach(function (k) {
+            if (k !== 'default') {
+                var d = Object.getOwnPropertyDescriptor(e, k);
+                Object.defineProperty(n, k, d.get ? d : {
+                    enumerable: true,
+                    get: function () { return e[k]; }
+                });
+            }
+        });
+    }
+    n.default = e;
+    return Object.freeze(n);
+}
+
+var path__namespace = /*#__PURE__*/_interopNamespaceDefault(path$3);
+var fs__namespace = /*#__PURE__*/_interopNamespaceDefault(fs$1);
 
 /******************************************************************************
 Copyright (c) Microsoft Corporation.
@@ -103,6 +124,11 @@ const DEFAULT_SETTINGS = {
     enableCloudBackup: false, // Future feature
     enableFineTuning: false, // Future feature
     showSuggestedCorrections: true, // Show suggestions by default
+    // Whisper Backend settings
+    whisperBackend: 'openai', // Default to OpenAI API
+    whisperCppPath: '/usr/local/bin/whisper', // Default whisper.cpp binary path
+    whisperModelPath: '', // User must configure model path
+    whisperLanguage: 'auto', // Auto-detect language
 };
 class Config {
     constructor(settings) {
@@ -532,6 +558,844 @@ class RecorderService {
             }
         }
         return '';
+    }
+}
+
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
+class OpenAIWhisperBackend {
+    constructor(config) {
+        this.config = config;
+    }
+    getName() {
+        return 'OpenAI Whisper API';
+    }
+    isReady() {
+        const apiKey = this.config.get('openaiApiKey');
+        return apiKey !== null && apiKey !== undefined && apiKey.length > 0;
+    }
+    transcribe(audioChunk) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const apiKey = this.config.get('openaiApiKey');
+            if (!apiKey) {
+                throw new Error('OpenAI API key not configured. Please set API key in settings.');
+            }
+            try {
+                // Create FormData for multipart upload
+                const formData = new FormData();
+                // Convert Blob to File with proper extension
+                const mimeType = audioChunk.blob.type || 'audio/webm';
+                // Determine file extension based on MIME type
+                let extension = 'webm';
+                if (mimeType.includes('mp4'))
+                    extension = 'mp4';
+                else if (mimeType.includes('mpeg'))
+                    extension = 'mpeg';
+                else if (mimeType.includes('ogg'))
+                    extension = 'ogg';
+                else if (mimeType.includes('wav'))
+                    extension = 'wav';
+                const file = new File([audioChunk.blob], `audio-${audioChunk.timestamp}.${extension}`, { type: mimeType });
+                console.log('[OpenAI Backend] Audio file:', {
+                    size: file.size,
+                    type: file.type,
+                    name: file.name,
+                });
+                // Check minimum file size (empty recordings are ~125 bytes)
+                if (file.size < 1000) {
+                    throw new Error('Recording too short or empty. Please record for at least 1-2 seconds.');
+                }
+                formData.append('file', file);
+                formData.append('model', this.config.get('whisperModel') || 'whisper-1');
+                formData.append('response_format', 'json');
+                // Direct fetch to OpenAI API
+                const response = yield fetch('https://api.openai.com/v1/audio/transcriptions', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`,
+                    },
+                    body: formData,
+                });
+                if (!response.ok) {
+                    const errorData = yield response.json().catch(() => ({}));
+                    throw new Error(`OpenAI API error: ${response.status} - ${JSON.stringify(errorData)}`);
+                }
+                const data = yield response.json();
+                // For simple json format, default confidence to 1.0
+                const confidence = 1.0;
+                const chunk = {
+                    text: data.text ? data.text.trim() : '',
+                    confidence,
+                    timestamp: audioChunk.timestamp,
+                };
+                eventBus.emit('transcribed', chunk);
+                return chunk;
+            }
+            catch (error) {
+                console.error('[OpenAI Backend] Transcription error:', error);
+                eventBus.emit('error', {
+                    message: 'Transcription failed',
+                    error,
+                });
+                throw error;
+            }
+        });
+    }
+}
+
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
+const execAsync = util$2.promisify(require$$0.exec);
+class LocalWhisperBackend {
+    constructor(config) {
+        this.config = config;
+        this.tempDir = path__namespace.join(process.env.TMPDIR || '/tmp', 'zeddal-whisper');
+        this.ensureTempDir();
+    }
+    getName() {
+        return 'Local Whisper.cpp';
+    }
+    isReady() {
+        const binaryPath = this.config.get('whisperCppPath');
+        const modelPath = this.config.get('whisperModelPath');
+        if (!binaryPath || !modelPath) {
+            return false;
+        }
+        // Check if binary exists
+        try {
+            if (!fs__namespace.existsSync(binaryPath)) {
+                console.warn(`[Local Whisper] Binary not found at: ${binaryPath}`);
+                return false;
+            }
+            // Check if model exists
+            if (!fs__namespace.existsSync(modelPath)) {
+                console.warn(`[Local Whisper] Model not found at: ${modelPath}`);
+                return false;
+            }
+            return true;
+        }
+        catch (error) {
+            console.error('[Local Whisper] Error checking files:', error);
+            return false;
+        }
+    }
+    transcribe(audioChunk) {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (!this.isReady()) {
+                throw new Error('Local Whisper not configured. Please set whisper.cpp binary and model path in settings.');
+            }
+            const tempAudioPath = yield this.saveTempAudio(audioChunk);
+            try {
+                const text = yield this.runWhisperCpp(tempAudioPath);
+                const chunk = {
+                    text: text.trim(),
+                    confidence: 1.0, // whisper.cpp doesn't provide confidence scores in basic mode
+                    timestamp: audioChunk.timestamp,
+                };
+                eventBus.emit('transcribed', chunk);
+                return chunk;
+            }
+            catch (error) {
+                console.error('[Local Whisper] Transcription error:', error);
+                eventBus.emit('error', {
+                    message: 'Local transcription failed',
+                    error,
+                });
+                throw error;
+            }
+            finally {
+                // Clean up temp file
+                this.cleanupTempFile(tempAudioPath);
+            }
+        });
+    }
+    /**
+     * Save audio blob to temporary file
+     */
+    saveTempAudio(audioChunk) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const filename = `audio-${Date.now()}.wav`;
+            const filepath = path__namespace.join(this.tempDir, filename);
+            // Convert blob to buffer
+            const arrayBuffer = yield audioChunk.blob.arrayBuffer();
+            const buffer = Buffer.from(arrayBuffer);
+            // Write to file
+            fs__namespace.writeFileSync(filepath, buffer);
+            console.log(`[Local Whisper] Saved temp audio: ${filepath} (${buffer.length} bytes)`);
+            return filepath;
+        });
+    }
+    /**
+     * Run whisper.cpp binary
+     */
+    runWhisperCpp(audioPath) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const binaryPath = this.config.get('whisperCppPath');
+            const modelPath = this.config.get('whisperModelPath');
+            const language = this.config.get('whisperLanguage') || 'auto';
+            // Build command
+            // whisper.cpp command: ./main -m model.bin -f audio.wav
+            let command = `"${binaryPath}" -m "${modelPath}" -f "${audioPath}"`;
+            // Add language if specified (not auto)
+            if (language !== 'auto') {
+                command += ` -l ${language}`;
+            }
+            // Add output to stdout (default behavior)
+            // Add no timestamps flag for cleaner output
+            command += ' -nt';
+            console.log(`[Local Whisper] Running: ${command}`);
+            try {
+                const { stdout, stderr } = yield execAsync(command, {
+                    maxBuffer: 10 * 1024 * 1024, // 10MB buffer
+                    timeout: 60000, // 60 second timeout
+                });
+                if (stderr) {
+                    console.warn(`[Local Whisper] stderr: ${stderr}`);
+                }
+                // Parse output - whisper.cpp outputs transcription to stdout
+                // Format is typically:
+                // [00:00:00.000 --> 00:00:05.000]  Transcribed text here
+                // We need to extract just the text part
+                const text = this.parseWhisperOutput(stdout);
+                console.log(`[Local Whisper] Transcribed: "${text}"`);
+                return text;
+            }
+            catch (error) {
+                if (error.killed || error.signal === 'SIGTERM') {
+                    throw new Error('Transcription timed out (60s limit exceeded)');
+                }
+                throw new Error(`whisper.cpp execution failed: ${error.message}`);
+            }
+        });
+    }
+    /**
+     * Parse whisper.cpp output to extract text
+     */
+    parseWhisperOutput(output) {
+        // whisper.cpp output format (with -nt flag):
+        // [00:00:00.000 --> 00:00:05.000]  This is the transcribed text
+        // [00:00:05.000 --> 00:00:10.000]  More transcribed text
+        const lines = output.split('\n');
+        const textLines = [];
+        for (const line of lines) {
+            // Match lines with timestamps
+            const match = line.match(/\[[\d:.]+\s+-->\s+[\d:.]+\]\s+(.+)/);
+            if (match && match[1]) {
+                textLines.push(match[1].trim());
+            }
+            else if (line.trim() && !line.includes('[')) {
+                // Also capture non-timestamp lines (plain text output)
+                textLines.push(line.trim());
+            }
+        }
+        return textLines.join(' ');
+    }
+    /**
+     * Ensure temp directory exists
+     */
+    ensureTempDir() {
+        try {
+            if (!fs__namespace.existsSync(this.tempDir)) {
+                fs__namespace.mkdirSync(this.tempDir, { recursive: true });
+            }
+        }
+        catch (error) {
+            console.error('[Local Whisper] Failed to create temp directory:', error);
+        }
+    }
+    /**
+     * Clean up temporary audio file
+     */
+    cleanupTempFile(filepath) {
+        try {
+            if (fs__namespace.existsSync(filepath)) {
+                fs__namespace.unlinkSync(filepath);
+                console.log(`[Local Whisper] Cleaned up temp file: ${filepath}`);
+            }
+        }
+        catch (error) {
+            console.warn(`[Local Whisper] Failed to clean up temp file: ${filepath}`, error);
+        }
+    }
+    /**
+     * Cleanup all temp files on shutdown
+     */
+    cleanup() {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                if (fs__namespace.existsSync(this.tempDir)) {
+                    const files = fs__namespace.readdirSync(this.tempDir);
+                    for (const file of files) {
+                        const filepath = path__namespace.join(this.tempDir, file);
+                        fs__namespace.unlinkSync(filepath);
+                    }
+                    fs__namespace.rmdirSync(this.tempDir);
+                    console.log('[Local Whisper] Cleaned up temp directory');
+                }
+            }
+            catch (error) {
+                console.warn('[Local Whisper] Failed to cleanup temp directory:', error);
+            }
+        });
+    }
+}
+
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
+class WhisperService {
+    constructor(config) {
+        this.config = config;
+        this.backend = this.selectBackend();
+    }
+    /**
+     * Select appropriate backend based on configuration
+     * Falls back to OpenAI if local backend isn't properly configured
+     */
+    selectBackend() {
+        const backendType = this.config.get('whisperBackend');
+        console.log(`[WhisperService] Requested backend: ${backendType}`);
+        // Try to create requested backend
+        let backend;
+        switch (backendType) {
+            case 'local-cpp': {
+                const localBackend = new LocalWhisperBackend(this.config);
+                if (localBackend.isReady()) {
+                    console.log('[WhisperService] Using local whisper.cpp backend');
+                    return localBackend;
+                }
+                else {
+                    console.warn('[WhisperService] Local whisper.cpp not configured, falling back to OpenAI');
+                    // Fall through to OpenAI
+                }
+            }
+            // Fall through to default if local not ready
+            case 'openai':
+            default:
+                backend = new OpenAIWhisperBackend(this.config);
+                console.log('[WhisperService] Using OpenAI Whisper API backend');
+                return backend;
+        }
+    }
+    /**
+     * Update backend when settings change
+     */
+    updateBackend() {
+        const oldBackend = this.backend.getName();
+        this.backend = this.selectBackend();
+        console.log(`[WhisperService] Backend changed from ${oldBackend} to ${this.backend.getName()}`);
+    }
+    /**
+     * Update API key (for OpenAI backend compatibility)
+     * Maintains backward compatibility with existing code
+     */
+    updateApiKey(apiKey) {
+        this.config.set('openaiApiKey', apiKey);
+        if (this.config.get('whisperBackend') === 'openai') {
+            this.updateBackend();
+        }
+    }
+    /**
+     * Transcribe audio chunk using selected backend
+     * Maintains existing API signature
+     */
+    transcribe(audioChunk) {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                return yield this.backend.transcribe(audioChunk);
+            }
+            catch (error) {
+                // If local backend fails, try falling back to OpenAI
+                if (this.config.get('whisperBackend') === 'local-cpp') {
+                    console.warn('[WhisperService] Local backend failed, attempting OpenAI fallback');
+                    try {
+                        const fallbackBackend = new OpenAIWhisperBackend(this.config);
+                        if (fallbackBackend.isReady()) {
+                            return yield fallbackBackend.transcribe(audioChunk);
+                        }
+                    }
+                    catch (fallbackError) {
+                        console.error('[WhisperService] Fallback also failed:', fallbackError);
+                    }
+                }
+                throw error;
+            }
+        });
+    }
+    /**
+     * Transcribe blob and return text
+     * Maintains existing API signature
+     */
+    transcribeBlobPartial(blob) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const chunk = {
+                blob,
+                timestamp: Date.now(),
+                duration: 0,
+            };
+            const result = yield this.transcribe(chunk);
+            return result.text || '';
+        });
+    }
+    /**
+     * Transcribe multiple audio chunks in sequence
+     * Maintains existing API signature
+     */
+    transcribeMultiple(audioChunks) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const results = [];
+            for (const chunk of audioChunks) {
+                try {
+                    const result = yield this.transcribe(chunk);
+                    results.push(result);
+                }
+                catch (error) {
+                    console.error('[WhisperService] Failed to transcribe chunk:', error);
+                    // Continue with next chunk even if one fails
+                }
+            }
+            return results;
+        });
+    }
+    /**
+     * Stream transcription (for future real-time implementation)
+     * Currently processes chunks sequentially
+     * Maintains existing API signature
+     */
+    stream(audioChunks, onChunk) {
+        return __awaiter(this, void 0, void 0, function* () {
+            for (const audioChunk of audioChunks) {
+                try {
+                    const result = yield this.transcribe(audioChunk);
+                    onChunk(result);
+                }
+                catch (error) {
+                    console.error('[WhisperService] Stream transcription error:', error);
+                    eventBus.emit('error', {
+                        message: 'Stream transcription failed',
+                        error,
+                    });
+                }
+            }
+        });
+    }
+    /**
+     * Combine multiple transcription chunks into single text
+     * Maintains existing API signature
+     */
+    combineChunks(chunks) {
+        const text = chunks.map((chunk) => chunk.text).join(' ');
+        const averageConfidence = chunks.length > 0
+            ? chunks.reduce((sum, chunk) => sum + chunk.confidence, 0) /
+                chunks.length
+            : 0;
+        return {
+            text,
+            averageConfidence,
+        };
+    }
+    /**
+     * Check if service is ready
+     * Maintains existing API signature
+     */
+    isReady() {
+        return this.backend.isReady();
+    }
+    /**
+     * Get current backend name (for debugging/display)
+     */
+    getBackendName() {
+        return this.backend.getName();
+    }
+}
+
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
+const MARKDOWN_LINK_REGEX = /\[([^\]]+)\]\((https?:[^)]+)\)/g;
+class CitationHelper {
+    static extract(text) {
+        if (!text) {
+            return [];
+        }
+        const citations = [];
+        let match;
+        while ((match = MARKDOWN_LINK_REGEX.exec(text)) !== null) {
+            citations.push({
+                keyword: match[1],
+                label: match[1],
+                url: match[2],
+                insertedAt: match.index,
+            });
+        }
+        return citations;
+    }
+}
+
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
+class LLMRefineService {
+    constructor(config) {
+        this.config = config;
+    }
+    /**
+     * Refine transcription with GPT-4 and optional context
+     */
+    refine(text_1) {
+        return __awaiter(this, arguments, void 0, function* (text, context = [], userPrompt) {
+            var _a, _b, _c, _d;
+            const apiKey = this.config.get('openaiApiKey');
+            if (!apiKey) {
+                throw new Error('OpenAI API key not configured');
+            }
+            try {
+                // Build system prompt
+                const systemPrompt = this.buildSystemPrompt(context);
+                // Build user message
+                const userMessage = userPrompt
+                    ? `${userPrompt}\n\nTranscription to refine:\n${text}`
+                    : `Please refine the following voice transcription into a well-structured note:\n\n${text}`;
+                // Call GPT-4 API directly (fetch instead of SDK for consistency)
+                const response = yield fetch('https://api.openai.com/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${apiKey}`,
+                    },
+                    body: JSON.stringify({
+                        model: this.config.get('gptModel'),
+                        messages: [
+                            { role: 'system', content: systemPrompt },
+                            { role: 'user', content: userMessage },
+                        ],
+                        temperature: 0.7,
+                        max_tokens: 2000,
+                    }),
+                });
+                if (!response.ok) {
+                    const errorData = yield response.json().catch(() => ({}));
+                    throw new Error(`GPT-4 API error: ${response.status} - ${JSON.stringify(errorData)}`);
+                }
+                const data = yield response.json();
+                const refinedText = ((_d = (_c = (_b = (_a = data.choices) === null || _a === void 0 ? void 0 : _a[0]) === null || _b === void 0 ? void 0 : _b.message) === null || _c === void 0 ? void 0 : _c.content) === null || _d === void 0 ? void 0 : _d.trim()) || text;
+                // Generate title
+                const title = yield this.generateTitle(refinedText);
+                // Extract potential wikilinks
+                const links = this.extractWikilinks(refinedText);
+                const refinedNote = {
+                    title,
+                    body: refinedText,
+                    links,
+                    timestamp: Date.now(),
+                    originalTranscription: text,
+                    citations: CitationHelper.extract(refinedText),
+                };
+                eventBus.emit('refined', refinedNote);
+                return refinedNote;
+            }
+            catch (error) {
+                console.error('Refinement error:', error);
+                eventBus.emit('error', {
+                    message: 'Refinement failed',
+                    error,
+                });
+                throw error;
+            }
+        });
+    }
+    /**
+     * Generate note title from content using GPT-4
+     */
+    generateTitle(text) {
+        return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b, _c, _d;
+            const apiKey = this.config.get('openaiApiKey');
+            if (!apiKey) {
+                throw new Error('OpenAI API key not configured');
+            }
+            try {
+                const response = yield fetch('https://api.openai.com/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${apiKey}`,
+                    },
+                    body: JSON.stringify({
+                        model: this.config.get('gptModel'),
+                        messages: [
+                            {
+                                role: 'system',
+                                content: 'You are a title generator. Create concise, descriptive titles (max 8 words) for notes. Respond with ONLY the title, no quotes or formatting.',
+                            },
+                            {
+                                role: 'user',
+                                content: `Generate a title for this note:\n\n${text.substring(0, 500)}`,
+                            },
+                        ],
+                        temperature: 0.5,
+                        max_tokens: 50,
+                    }),
+                });
+                if (!response.ok) {
+                    console.warn('Title generation failed, using fallback');
+                    return this.generateFallbackTitle(text);
+                }
+                const data = yield response.json();
+                const title = (_d = (_c = (_b = (_a = data.choices) === null || _a === void 0 ? void 0 : _a[0]) === null || _b === void 0 ? void 0 : _b.message) === null || _c === void 0 ? void 0 : _c.content) === null || _d === void 0 ? void 0 : _d.trim();
+                return title || this.generateFallbackTitle(text);
+            }
+            catch (error) {
+                console.error('Title generation error:', error);
+                return this.generateFallbackTitle(text);
+            }
+        });
+    }
+    /**
+     * Simple refinement without GPT-4 (for quick saves)
+     */
+    simpleRefine(text) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const title = this.generateFallbackTitle(text);
+            const links = this.extractWikilinks(text);
+            const refinedNote = {
+                title,
+                body: text,
+                links,
+                timestamp: Date.now(),
+                originalTranscription: text,
+                citations: CitationHelper.extract(text),
+            };
+            return refinedNote;
+        });
+    }
+    /**
+     * Build system prompt with optional context
+     */
+    buildSystemPrompt(context) {
+        let prompt = `You are an expert note-taking assistant for Obsidian. Your role is to:
+
+1. Transform voice transcriptions into well-structured, readable notes
+2. Fix grammar, punctuation, and sentence structure
+3. Organize thoughts into clear sections with markdown headings
+4. Preserve the speaker's original meaning and intent
+5. Use markdown formatting (bold, italics, lists, etc.)
+6. Identify key concepts and highlight them appropriately
+7. If you introduce facts or data not explicitly present in the raw transcript, cite the exact external source that informed that statement using inline Markdown link syntax: [Source Name](https://example.com). These citations must reference actual sources you used while generating the response; do not invent URLs.
+8. When citing broad background knowledge rather than a specific primary source, wrap the hyperlink in italics, e.g., _[Background Source](https://example.com)_, so readers know it is a general reference.`;
+        if (context.length > 0) {
+            prompt += `\n\n**Context from vault:**\n${context.slice(0, 3).join('\n\n')}`;
+            prompt += '\n\nUse this context to inform your refinement and suggest relevant connections.';
+        }
+        return prompt;
+    }
+    /**
+     * Extract wikilinks from text
+     */
+    extractWikilinks(text) {
+        const wikilinkRegex = /\[\[([^\]]+)\]\]/g;
+        const matches = Array.from(text.matchAll(wikilinkRegex));
+        return matches.map((match) => match[1]);
+    }
+    /**
+     * Generate fallback title from first sentence
+     */
+    generateFallbackTitle(text) {
+        // Get first sentence or first 50 chars
+        const firstSentence = text.split(/[.!?]\s/)[0];
+        const title = firstSentence.substring(0, 60).trim();
+        // If too short, use timestamp
+        if (title.length < 3) {
+            const date = new Date();
+            return `Voice Note ${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
+        }
+        return title + (firstSentence.length > 60 ? '...' : '');
+    }
+    /**
+     * Check if service is ready
+     */
+    isReady() {
+        const apiKey = this.config.get('openaiApiKey');
+        return apiKey !== null && apiKey !== undefined && apiKey.length > 0;
+    }
+}
+
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
+class TextChunker {
+    /**
+     * Split text into overlapping chunks
+     * Uses approximate token counting (1 token ≈ 4 characters)
+     */
+    static chunk(text, options) {
+        const { chunkSize, overlap } = options;
+        if (!text || text.trim().length === 0) {
+            return [];
+        }
+        const chunks = [];
+        const approxCharsPerChunk = chunkSize * 4; // 1 token ≈ 4 chars
+        const approxOverlapChars = overlap * 4;
+        // Split text into sentences to avoid breaking mid-sentence
+        const sentences = this.splitIntoSentences(text);
+        let currentChunk = '';
+        let currentChunkStartChar = 0;
+        let chunkIndex = 0;
+        for (let i = 0; i < sentences.length; i++) {
+            const sentence = sentences[i];
+            const potentialChunk = currentChunk + (currentChunk ? ' ' : '') + sentence;
+            // If adding this sentence exceeds chunk size, save current chunk
+            if (potentialChunk.length > approxCharsPerChunk && currentChunk.length > 0) {
+                const tokens = this.estimateTokens(currentChunk);
+                chunks.push({
+                    text: currentChunk,
+                    chunkIndex,
+                    tokens,
+                    startChar: currentChunkStartChar,
+                    endChar: currentChunkStartChar + currentChunk.length,
+                });
+                chunkIndex++;
+                // Start new chunk with overlap
+                const overlapText = this.getOverlapText(currentChunk, approxOverlapChars);
+                currentChunk = overlapText + (overlapText ? ' ' : '') + sentence;
+                currentChunkStartChar += currentChunk.length - overlapText.length;
+            }
+            else {
+                currentChunk = potentialChunk;
+            }
+        }
+        // Add final chunk if it has content
+        if (currentChunk.trim()) {
+            const tokens = this.estimateTokens(currentChunk);
+            chunks.push({
+                text: currentChunk,
+                chunkIndex,
+                tokens,
+                startChar: currentChunkStartChar,
+                endChar: currentChunkStartChar + currentChunk.length,
+            });
+        }
+        return chunks;
+    }
+    /**
+     * Split text into sentences (basic sentence boundary detection)
+     */
+    static splitIntoSentences(text) {
+        // Match sentence boundaries: . ! ? followed by space or end
+        const sentenceRegex = /[^.!?]+[.!?]+/g;
+        const sentences = text.match(sentenceRegex) || [];
+        // If no sentences matched, return the whole text as one sentence
+        if (sentences.length === 0) {
+            return [text.trim()];
+        }
+        return sentences.map((s) => s.trim()).filter((s) => s.length > 0);
+    }
+    /**
+     * Get overlap text from end of chunk
+     */
+    static getOverlapText(chunk, overlapChars) {
+        if (chunk.length <= overlapChars) {
+            return chunk;
+        }
+        // Try to break at sentence boundary within overlap window
+        const overlapCandidate = chunk.slice(-overlapChars);
+        const lastSentenceBoundary = Math.max(overlapCandidate.lastIndexOf('.'), overlapCandidate.lastIndexOf('!'), overlapCandidate.lastIndexOf('?'));
+        if (lastSentenceBoundary > 0) {
+            return overlapCandidate.slice(lastSentenceBoundary + 1).trim();
+        }
+        return overlapCandidate.trim();
+    }
+    /**
+     * Estimate token count
+     * Rough heuristic: 1 token ≈ 4 characters
+     * This is approximate but sufficient for chunking
+     */
+    static estimateTokens(text) {
+        return Math.ceil(text.length / 4);
+    }
+    /**
+     * Validate chunk options
+     */
+    static validateOptions(options) {
+        if (options.chunkSize <= 0) {
+            throw new Error('Chunk size must be positive');
+        }
+        if (options.overlap < 0) {
+            throw new Error('Overlap cannot be negative');
+        }
+        if (options.overlap >= options.chunkSize) {
+            throw new Error('Overlap must be less than chunk size');
+        }
+    }
+}
+
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
+class VectorMath {
+    /**
+     * Compute cosine similarity between two embedding vectors
+     * Returns a value between -1 (opposite) and 1 (identical)
+     * Typically RAG results range from 0.3 to 0.95
+     */
+    static cosineSimilarity(a, b) {
+        if (a.dimensions !== b.dimensions) {
+            throw new Error(`Vector dimension mismatch: ${a.dimensions} vs ${b.dimensions}`);
+        }
+        const dotProduct = this.dotProduct(a.values, b.values);
+        const magnitudeA = this.magnitude(a.values);
+        const magnitudeB = this.magnitude(b.values);
+        if (magnitudeA === 0 || magnitudeB === 0) {
+            return 0;
+        }
+        return dotProduct / (magnitudeA * magnitudeB);
+    }
+    /**
+     * Compute dot product of two vectors
+     */
+    static dotProduct(a, b) {
+        let sum = 0;
+        for (let i = 0; i < a.length; i++) {
+            sum += a[i] * b[i];
+        }
+        return sum;
+    }
+    /**
+     * Compute magnitude (L2 norm) of a vector
+     */
+    static magnitude(v) {
+        let sum = 0;
+        for (let i = 0; i < v.length; i++) {
+            sum += v[i] * v[i];
+        }
+        return Math.sqrt(sum);
+    }
+    /**
+     * Normalize a vector to unit length
+     */
+    static normalize(v) {
+        const mag = this.magnitude(v.values);
+        if (mag === 0) {
+            return v;
+        }
+        return {
+            values: v.values.map((val) => val / mag),
+            dimensions: v.dimensions,
+        };
+    }
+    /**
+     * Find top-K most similar vectors from a list
+     */
+    static topKSimilar(query, candidates, k) {
+        const similarities = candidates.map((candidate) => ({
+            similarity: this.cosineSimilarity(query, candidate.embedding),
+            metadata: candidate.metadata,
+        }));
+        // Sort by similarity (descending) and take top K
+        similarities.sort((a, b) => b.similarity - a.similarity);
+        return similarities.slice(0, k);
     }
 }
 
@@ -7131,570 +7995,6 @@ OpenAI.Evals = Evals;
 OpenAI.EvalListResponsesPage = EvalListResponsesPage;
 OpenAI.Containers = Containers;
 OpenAI.ContainerListResponsesPage = ContainerListResponsesPage;
-
-// Copyright © 2025 Jason Hutchcraft
-// Licensed under the Business Source License 1.1 (see LICENSE for details)
-// Change Date: 2029-01-01 → Apache 2.0 License
-class WhisperService {
-    constructor(config) {
-        this.openai = null;
-        this.config = config;
-        this.initializeClient();
-    }
-    /**
-     * Initialize OpenAI client
-     */
-    initializeClient() {
-        const apiKey = this.config.get('openaiApiKey');
-        if (!apiKey) {
-            console.warn('OpenAI API key not configured');
-            return;
-        }
-        this.openai = new OpenAI({
-            apiKey,
-            dangerouslyAllowBrowser: true, // Note: In production, proxy through backend
-        });
-    }
-    /**
-     * Update API key and reinitialize client
-     */
-    updateApiKey(apiKey) {
-        this.config.set('openaiApiKey', apiKey);
-        this.initializeClient();
-    }
-    /**
-     * Transcribe audio chunk using OpenAI Whisper
-     */
-    transcribe(audioChunk) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const apiKey = this.config.get('openaiApiKey');
-            if (!apiKey) {
-                throw new Error('OpenAI API key not configured. Please set API key.');
-            }
-            try {
-                // Create FormData for multipart upload
-                const formData = new FormData();
-                // Convert Blob to File with proper extension
-                // Use the actual MIME type from the blob, or default to audio/webm
-                const mimeType = audioChunk.blob.type || 'audio/webm';
-                // Determine file extension based on MIME type
-                let extension = 'webm';
-                if (mimeType.includes('mp4'))
-                    extension = 'mp4';
-                else if (mimeType.includes('mpeg'))
-                    extension = 'mpeg';
-                else if (mimeType.includes('ogg'))
-                    extension = 'ogg';
-                else if (mimeType.includes('wav'))
-                    extension = 'wav';
-                const file = new File([audioChunk.blob], `audio-${audioChunk.timestamp}.${extension}`, { type: mimeType });
-                console.log('Audio file details:', {
-                    size: file.size,
-                    type: file.type,
-                    name: file.name,
-                });
-                // Check minimum file size (empty recordings are ~125 bytes)
-                if (file.size < 1000) {
-                    throw new Error('Recording too short or empty. Please record for at least 1-2 seconds.');
-                }
-                formData.append('file', file);
-                formData.append('model', this.config.get('whisperModel'));
-                formData.append('response_format', 'json'); // Use simple json instead of verbose_json
-                // Direct fetch to OpenAI API (bypasses SDK CORS issues)
-                const response = yield fetch('https://api.openai.com/v1/audio/transcriptions', {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${apiKey}`,
-                    },
-                    body: formData,
-                });
-                if (!response.ok) {
-                    const errorData = yield response.json().catch(() => ({}));
-                    throw new Error(`API error: ${response.status} - ${JSON.stringify(errorData)}`);
-                }
-                const data = yield response.json();
-                // For simple json format, we don't get confidence scores
-                // Default to 1.0 for now (Phase 2 can use verbose_json if needed)
-                const confidence = 1.0;
-                const chunk = {
-                    text: data.text ? data.text.trim() : '',
-                    confidence,
-                    timestamp: audioChunk.timestamp,
-                };
-                eventBus.emit('transcribed', chunk);
-                return chunk;
-            }
-            catch (error) {
-                console.error('Whisper transcription error:', error);
-                eventBus.emit('error', {
-                    message: 'Transcription failed',
-                    error,
-                });
-                throw error;
-            }
-        });
-    }
-    transcribeBlobPartial(blob) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const chunk = {
-                blob,
-                timestamp: Date.now(),
-                duration: 0,
-            };
-            const result = yield this.transcribe(chunk);
-            return result.text || '';
-        });
-    }
-    /**
-     * Transcribe multiple audio chunks in sequence
-     */
-    transcribeMultiple(audioChunks) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const results = [];
-            for (const chunk of audioChunks) {
-                try {
-                    const result = yield this.transcribe(chunk);
-                    results.push(result);
-                }
-                catch (error) {
-                    console.error('Failed to transcribe chunk:', error);
-                    // Continue with next chunk even if one fails
-                }
-            }
-            return results;
-        });
-    }
-    /**
-     * Stream transcription (for future real-time implementation)
-     * Currently processes chunks sequentially
-     */
-    stream(audioChunks, onChunk) {
-        return __awaiter(this, void 0, void 0, function* () {
-            for (const audioChunk of audioChunks) {
-                try {
-                    const result = yield this.transcribe(audioChunk);
-                    onChunk(result);
-                }
-                catch (error) {
-                    console.error('Stream transcription error:', error);
-                    eventBus.emit('error', {
-                        message: 'Stream transcription failed',
-                        error,
-                    });
-                }
-            }
-        });
-    }
-    /**
-     * Combine multiple transcription chunks into single text
-     */
-    combineChunks(chunks) {
-        const text = chunks.map((chunk) => chunk.text).join(' ');
-        const averageConfidence = chunks.length > 0
-            ? chunks.reduce((sum, chunk) => sum + chunk.confidence, 0) /
-                chunks.length
-            : 0;
-        return {
-            text,
-            averageConfidence,
-        };
-    }
-    /**
-     * Check if service is ready
-     */
-    isReady() {
-        const apiKey = this.config.get('openaiApiKey');
-        return apiKey !== null && apiKey !== undefined && apiKey.length > 0;
-    }
-}
-
-// Copyright © 2025 Jason Hutchcraft
-// Licensed under the Business Source License 1.1 (see LICENSE for details)
-// Change Date: 2029-01-01 → Apache 2.0 License
-const MARKDOWN_LINK_REGEX = /\[([^\]]+)\]\((https?:[^)]+)\)/g;
-class CitationHelper {
-    static extract(text) {
-        if (!text) {
-            return [];
-        }
-        const citations = [];
-        let match;
-        while ((match = MARKDOWN_LINK_REGEX.exec(text)) !== null) {
-            citations.push({
-                keyword: match[1],
-                label: match[1],
-                url: match[2],
-                insertedAt: match.index,
-            });
-        }
-        return citations;
-    }
-}
-
-// Copyright © 2025 Jason Hutchcraft
-// Licensed under the Business Source License 1.1 (see LICENSE for details)
-// Change Date: 2029-01-01 → Apache 2.0 License
-class LLMRefineService {
-    constructor(config) {
-        this.config = config;
-    }
-    /**
-     * Refine transcription with GPT-4 and optional context
-     */
-    refine(text_1) {
-        return __awaiter(this, arguments, void 0, function* (text, context = [], userPrompt) {
-            var _a, _b, _c, _d;
-            const apiKey = this.config.get('openaiApiKey');
-            if (!apiKey) {
-                throw new Error('OpenAI API key not configured');
-            }
-            try {
-                // Build system prompt
-                const systemPrompt = this.buildSystemPrompt(context);
-                // Build user message
-                const userMessage = userPrompt
-                    ? `${userPrompt}\n\nTranscription to refine:\n${text}`
-                    : `Please refine the following voice transcription into a well-structured note:\n\n${text}`;
-                // Call GPT-4 API directly (fetch instead of SDK for consistency)
-                const response = yield fetch('https://api.openai.com/v1/chat/completions', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${apiKey}`,
-                    },
-                    body: JSON.stringify({
-                        model: this.config.get('gptModel'),
-                        messages: [
-                            { role: 'system', content: systemPrompt },
-                            { role: 'user', content: userMessage },
-                        ],
-                        temperature: 0.7,
-                        max_tokens: 2000,
-                    }),
-                });
-                if (!response.ok) {
-                    const errorData = yield response.json().catch(() => ({}));
-                    throw new Error(`GPT-4 API error: ${response.status} - ${JSON.stringify(errorData)}`);
-                }
-                const data = yield response.json();
-                const refinedText = ((_d = (_c = (_b = (_a = data.choices) === null || _a === void 0 ? void 0 : _a[0]) === null || _b === void 0 ? void 0 : _b.message) === null || _c === void 0 ? void 0 : _c.content) === null || _d === void 0 ? void 0 : _d.trim()) || text;
-                // Generate title
-                const title = yield this.generateTitle(refinedText);
-                // Extract potential wikilinks
-                const links = this.extractWikilinks(refinedText);
-                const refinedNote = {
-                    title,
-                    body: refinedText,
-                    links,
-                    timestamp: Date.now(),
-                    originalTranscription: text,
-                    citations: CitationHelper.extract(refinedText),
-                };
-                eventBus.emit('refined', refinedNote);
-                return refinedNote;
-            }
-            catch (error) {
-                console.error('Refinement error:', error);
-                eventBus.emit('error', {
-                    message: 'Refinement failed',
-                    error,
-                });
-                throw error;
-            }
-        });
-    }
-    /**
-     * Generate note title from content using GPT-4
-     */
-    generateTitle(text) {
-        return __awaiter(this, void 0, void 0, function* () {
-            var _a, _b, _c, _d;
-            const apiKey = this.config.get('openaiApiKey');
-            if (!apiKey) {
-                throw new Error('OpenAI API key not configured');
-            }
-            try {
-                const response = yield fetch('https://api.openai.com/v1/chat/completions', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${apiKey}`,
-                    },
-                    body: JSON.stringify({
-                        model: this.config.get('gptModel'),
-                        messages: [
-                            {
-                                role: 'system',
-                                content: 'You are a title generator. Create concise, descriptive titles (max 8 words) for notes. Respond with ONLY the title, no quotes or formatting.',
-                            },
-                            {
-                                role: 'user',
-                                content: `Generate a title for this note:\n\n${text.substring(0, 500)}`,
-                            },
-                        ],
-                        temperature: 0.5,
-                        max_tokens: 50,
-                    }),
-                });
-                if (!response.ok) {
-                    console.warn('Title generation failed, using fallback');
-                    return this.generateFallbackTitle(text);
-                }
-                const data = yield response.json();
-                const title = (_d = (_c = (_b = (_a = data.choices) === null || _a === void 0 ? void 0 : _a[0]) === null || _b === void 0 ? void 0 : _b.message) === null || _c === void 0 ? void 0 : _c.content) === null || _d === void 0 ? void 0 : _d.trim();
-                return title || this.generateFallbackTitle(text);
-            }
-            catch (error) {
-                console.error('Title generation error:', error);
-                return this.generateFallbackTitle(text);
-            }
-        });
-    }
-    /**
-     * Simple refinement without GPT-4 (for quick saves)
-     */
-    simpleRefine(text) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const title = this.generateFallbackTitle(text);
-            const links = this.extractWikilinks(text);
-            const refinedNote = {
-                title,
-                body: text,
-                links,
-                timestamp: Date.now(),
-                originalTranscription: text,
-                citations: CitationHelper.extract(text),
-            };
-            return refinedNote;
-        });
-    }
-    /**
-     * Build system prompt with optional context
-     */
-    buildSystemPrompt(context) {
-        let prompt = `You are an expert note-taking assistant for Obsidian. Your role is to:
-
-1. Transform voice transcriptions into well-structured, readable notes
-2. Fix grammar, punctuation, and sentence structure
-3. Organize thoughts into clear sections with markdown headings
-4. Preserve the speaker's original meaning and intent
-5. Use markdown formatting (bold, italics, lists, etc.)
-6. Identify key concepts and highlight them appropriately
-7. If you introduce facts or data not explicitly present in the raw transcript, cite the exact external source that informed that statement using inline Markdown link syntax: [Source Name](https://example.com). These citations must reference actual sources you used while generating the response; do not invent URLs.
-8. When citing broad background knowledge rather than a specific primary source, wrap the hyperlink in italics, e.g., _[Background Source](https://example.com)_, so readers know it is a general reference.`;
-        if (context.length > 0) {
-            prompt += `\n\n**Context from vault:**\n${context.slice(0, 3).join('\n\n')}`;
-            prompt += '\n\nUse this context to inform your refinement and suggest relevant connections.';
-        }
-        return prompt;
-    }
-    /**
-     * Extract wikilinks from text
-     */
-    extractWikilinks(text) {
-        const wikilinkRegex = /\[\[([^\]]+)\]\]/g;
-        const matches = Array.from(text.matchAll(wikilinkRegex));
-        return matches.map((match) => match[1]);
-    }
-    /**
-     * Generate fallback title from first sentence
-     */
-    generateFallbackTitle(text) {
-        // Get first sentence or first 50 chars
-        const firstSentence = text.split(/[.!?]\s/)[0];
-        const title = firstSentence.substring(0, 60).trim();
-        // If too short, use timestamp
-        if (title.length < 3) {
-            const date = new Date();
-            return `Voice Note ${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
-        }
-        return title + (firstSentence.length > 60 ? '...' : '');
-    }
-    /**
-     * Check if service is ready
-     */
-    isReady() {
-        const apiKey = this.config.get('openaiApiKey');
-        return apiKey !== null && apiKey !== undefined && apiKey.length > 0;
-    }
-}
-
-// Copyright © 2025 Jason Hutchcraft
-// Licensed under the Business Source License 1.1 (see LICENSE for details)
-// Change Date: 2029-01-01 → Apache 2.0 License
-class TextChunker {
-    /**
-     * Split text into overlapping chunks
-     * Uses approximate token counting (1 token ≈ 4 characters)
-     */
-    static chunk(text, options) {
-        const { chunkSize, overlap } = options;
-        if (!text || text.trim().length === 0) {
-            return [];
-        }
-        const chunks = [];
-        const approxCharsPerChunk = chunkSize * 4; // 1 token ≈ 4 chars
-        const approxOverlapChars = overlap * 4;
-        // Split text into sentences to avoid breaking mid-sentence
-        const sentences = this.splitIntoSentences(text);
-        let currentChunk = '';
-        let currentChunkStartChar = 0;
-        let chunkIndex = 0;
-        for (let i = 0; i < sentences.length; i++) {
-            const sentence = sentences[i];
-            const potentialChunk = currentChunk + (currentChunk ? ' ' : '') + sentence;
-            // If adding this sentence exceeds chunk size, save current chunk
-            if (potentialChunk.length > approxCharsPerChunk && currentChunk.length > 0) {
-                const tokens = this.estimateTokens(currentChunk);
-                chunks.push({
-                    text: currentChunk,
-                    chunkIndex,
-                    tokens,
-                    startChar: currentChunkStartChar,
-                    endChar: currentChunkStartChar + currentChunk.length,
-                });
-                chunkIndex++;
-                // Start new chunk with overlap
-                const overlapText = this.getOverlapText(currentChunk, approxOverlapChars);
-                currentChunk = overlapText + (overlapText ? ' ' : '') + sentence;
-                currentChunkStartChar += currentChunk.length - overlapText.length;
-            }
-            else {
-                currentChunk = potentialChunk;
-            }
-        }
-        // Add final chunk if it has content
-        if (currentChunk.trim()) {
-            const tokens = this.estimateTokens(currentChunk);
-            chunks.push({
-                text: currentChunk,
-                chunkIndex,
-                tokens,
-                startChar: currentChunkStartChar,
-                endChar: currentChunkStartChar + currentChunk.length,
-            });
-        }
-        return chunks;
-    }
-    /**
-     * Split text into sentences (basic sentence boundary detection)
-     */
-    static splitIntoSentences(text) {
-        // Match sentence boundaries: . ! ? followed by space or end
-        const sentenceRegex = /[^.!?]+[.!?]+/g;
-        const sentences = text.match(sentenceRegex) || [];
-        // If no sentences matched, return the whole text as one sentence
-        if (sentences.length === 0) {
-            return [text.trim()];
-        }
-        return sentences.map((s) => s.trim()).filter((s) => s.length > 0);
-    }
-    /**
-     * Get overlap text from end of chunk
-     */
-    static getOverlapText(chunk, overlapChars) {
-        if (chunk.length <= overlapChars) {
-            return chunk;
-        }
-        // Try to break at sentence boundary within overlap window
-        const overlapCandidate = chunk.slice(-overlapChars);
-        const lastSentenceBoundary = Math.max(overlapCandidate.lastIndexOf('.'), overlapCandidate.lastIndexOf('!'), overlapCandidate.lastIndexOf('?'));
-        if (lastSentenceBoundary > 0) {
-            return overlapCandidate.slice(lastSentenceBoundary + 1).trim();
-        }
-        return overlapCandidate.trim();
-    }
-    /**
-     * Estimate token count
-     * Rough heuristic: 1 token ≈ 4 characters
-     * This is approximate but sufficient for chunking
-     */
-    static estimateTokens(text) {
-        return Math.ceil(text.length / 4);
-    }
-    /**
-     * Validate chunk options
-     */
-    static validateOptions(options) {
-        if (options.chunkSize <= 0) {
-            throw new Error('Chunk size must be positive');
-        }
-        if (options.overlap < 0) {
-            throw new Error('Overlap cannot be negative');
-        }
-        if (options.overlap >= options.chunkSize) {
-            throw new Error('Overlap must be less than chunk size');
-        }
-    }
-}
-
-// Copyright © 2025 Jason Hutchcraft
-// Licensed under the Business Source License 1.1 (see LICENSE for details)
-// Change Date: 2029-01-01 → Apache 2.0 License
-class VectorMath {
-    /**
-     * Compute cosine similarity between two embedding vectors
-     * Returns a value between -1 (opposite) and 1 (identical)
-     * Typically RAG results range from 0.3 to 0.95
-     */
-    static cosineSimilarity(a, b) {
-        if (a.dimensions !== b.dimensions) {
-            throw new Error(`Vector dimension mismatch: ${a.dimensions} vs ${b.dimensions}`);
-        }
-        const dotProduct = this.dotProduct(a.values, b.values);
-        const magnitudeA = this.magnitude(a.values);
-        const magnitudeB = this.magnitude(b.values);
-        if (magnitudeA === 0 || magnitudeB === 0) {
-            return 0;
-        }
-        return dotProduct / (magnitudeA * magnitudeB);
-    }
-    /**
-     * Compute dot product of two vectors
-     */
-    static dotProduct(a, b) {
-        let sum = 0;
-        for (let i = 0; i < a.length; i++) {
-            sum += a[i] * b[i];
-        }
-        return sum;
-    }
-    /**
-     * Compute magnitude (L2 norm) of a vector
-     */
-    static magnitude(v) {
-        let sum = 0;
-        for (let i = 0; i < v.length; i++) {
-            sum += v[i] * v[i];
-        }
-        return Math.sqrt(sum);
-    }
-    /**
-     * Normalize a vector to unit length
-     */
-    static normalize(v) {
-        const mag = this.magnitude(v.values);
-        if (mag === 0) {
-            return v;
-        }
-        return {
-            values: v.values.map((val) => val / mag),
-            dimensions: v.dimensions,
-        };
-    }
-    /**
-     * Find top-K most similar vectors from a list
-     */
-    static topKSimilar(query, candidates, k) {
-        const similarities = candidates.map((candidate) => ({
-            similarity: this.cosineSimilarity(query, candidate.embedding),
-            metadata: candidate.metadata,
-        }));
-        // Sort by similarity (descending) and take top K
-        similarities.sort((a, b) => b.similarity - a.similarity);
-        return similarities.slice(0, k);
-    }
-}
 
 // Copyright © 2025 Jason Hutchcraft
 // Licensed under the Business Source License 1.1 (see LICENSE for details)
@@ -21399,7 +21699,7 @@ function requireWindows () {
 	windows = isexe;
 	isexe.sync = sync;
 
-	var fs = require$$0;
+	var fs = fs$1;
 
 	function checkPathExt (path, options) {
 	  var pathext = options.pathExt !== undefined ?
@@ -21450,7 +21750,7 @@ function requireMode () {
 	mode = isexe;
 	isexe.sync = sync;
 
-	var fs = require$$0;
+	var fs = fs$1;
 
 	function isexe (path, options, cb) {
 	  fs.stat(path, function (er, stat) {
@@ -21552,7 +21852,7 @@ const isWindows = process.platform === 'win32' ||
     process.env.OSTYPE === 'cygwin' ||
     process.env.OSTYPE === 'msys';
 
-const path$2 = require$$0$1;
+const path$2 = path$3;
 const COLON = isWindows ? ';' : ':';
 const isexe = isexe_1;
 
@@ -21693,7 +21993,7 @@ pathKey$1.exports.default = pathKey;
 
 var pathKeyExports = pathKey$1.exports;
 
-const path$1 = require$$0$1;
+const path$1 = path$3;
 const which = which_1;
 const getPathKey = pathKeyExports;
 
@@ -21813,7 +22113,7 @@ var shebangCommand$1 = (string = '') => {
 	return argument ? `${binary} ${argument}` : binary;
 };
 
-const fs = require$$0;
+const fs = fs$1;
 const shebangCommand = shebangCommand$1;
 
 function readShebang$1(command) {
@@ -21835,7 +22135,7 @@ function readShebang$1(command) {
 
 var readShebang_1 = readShebang$1;
 
-const path = require$$0$1;
+const path = path$3;
 const resolveCommand = resolveCommand_1;
 const escape$1 = _escape;
 const readShebang = readShebang_1;
@@ -21983,7 +22283,7 @@ var enoent$1 = {
     notFoundError,
 };
 
-const cp = require$$0$2;
+const cp = require$$0;
 const parse = parse_1;
 const enoent = enoent$1;
 
@@ -29273,12 +29573,12 @@ class ZeddalSettingTab extends obsidian.PluginSettingTab {
                 this.display(); // Refresh to show updated analytics
             }
         })));
-        // Advanced Settings (Future Features)
-        containerEl.createEl('h4', { text: 'Advanced (Future Features)' });
+        // Experimental Features
+        containerEl.createEl('h4', { text: 'Experimental Features' });
         // Enable Correction Sharing
         new obsidian.Setting(containerEl)
             .setName('Enable Correction Sharing')
-            .setDesc('Allow exporting/sharing patterns with community (future feature)')
+            .setDesc('Allow exporting/sharing patterns with community (coming soon)')
             .addToggle((toggle) => toggle
             .setValue(this.plugin.settings.enableCorrectionSharing)
             .setDisabled(true)
@@ -29289,7 +29589,7 @@ class ZeddalSettingTab extends obsidian.PluginSettingTab {
         // Enable Cloud Backup
         new obsidian.Setting(containerEl)
             .setName('Enable Cloud Backup')
-            .setDesc('Sync corrections to cloud storage (future feature)')
+            .setDesc('Sync corrections to cloud storage (coming soon)')
             .addToggle((toggle) => toggle
             .setValue(this.plugin.settings.enableCloudBackup)
             .setDisabled(true)
@@ -29300,7 +29600,7 @@ class ZeddalSettingTab extends obsidian.PluginSettingTab {
         // Enable Fine-Tuning
         new obsidian.Setting(containerEl)
             .setName('Enable Model Fine-Tuning')
-            .setDesc('Use corrections for OpenAI model fine-tuning (future feature)')
+            .setDesc('Use corrections for OpenAI model fine-tuning (coming soon)')
             .addToggle((toggle) => toggle
             .setValue(this.plugin.settings.enableFineTuning)
             .setDisabled(true)
@@ -29308,6 +29608,95 @@ class ZeddalSettingTab extends obsidian.PluginSettingTab {
             this.plugin.settings.enableFineTuning = value;
             yield this.plugin.saveSettings();
         })));
+        // Whisper Backend Configuration
+        containerEl.createEl('h4', { text: 'Whisper Backend Configuration' });
+        // Backend Selection
+        new obsidian.Setting(containerEl)
+            .setName('Transcription Backend')
+            .setDesc('Choose between cloud-based OpenAI API (default) or local whisper.cpp')
+            .addDropdown((dropdown) => dropdown
+            .addOption('openai', 'OpenAI Whisper API (cloud)')
+            .addOption('local-cpp', 'Local whisper.cpp (offline)')
+            .setValue(this.plugin.settings.whisperBackend || 'openai')
+            .onChange((value) => __awaiter(this, void 0, void 0, function* () {
+            this.plugin.settings.whisperBackend = value;
+            yield this.plugin.saveSettings();
+            // Update backend in WhisperService
+            this.plugin.whisperService.updateBackend();
+            // Refresh display to show/hide local backend settings
+            this.display();
+            // Show status message
+            const backendName = this.plugin.whisperService.getBackendName();
+            this.plugin.toast.info(`Switched to ${backendName}`);
+        })));
+        // Show local backend settings only if local-cpp is selected
+        if (this.plugin.settings.whisperBackend === 'local-cpp') {
+            // Whisper.cpp Binary Path
+            new obsidian.Setting(containerEl)
+                .setName('Whisper.cpp Binary Path')
+                .setDesc('Path to whisper.cpp executable (e.g., /usr/local/bin/whisper)')
+                .addText((text) => text
+                .setPlaceholder('/usr/local/bin/whisper')
+                .setValue(this.plugin.settings.whisperCppPath || '')
+                .onChange((value) => __awaiter(this, void 0, void 0, function* () {
+                this.plugin.settings.whisperCppPath = value;
+                yield this.plugin.saveSettings();
+                this.plugin.whisperService.updateBackend();
+            })));
+            // Whisper Model Path
+            new obsidian.Setting(containerEl)
+                .setName('Whisper Model Path')
+                .setDesc('Path to whisper model file (e.g., /path/to/ggml-base.en.bin)')
+                .addText((text) => text
+                .setPlaceholder('/path/to/ggml-base.en.bin')
+                .setValue(this.plugin.settings.whisperModelPath || '')
+                .onChange((value) => __awaiter(this, void 0, void 0, function* () {
+                this.plugin.settings.whisperModelPath = value;
+                yield this.plugin.saveSettings();
+                this.plugin.whisperService.updateBackend();
+            })));
+            // Language Override
+            new obsidian.Setting(containerEl)
+                .setName('Whisper Language')
+                .setDesc('Language code for transcription (e.g., en, es, fr) or "auto" for auto-detect')
+                .addText((text) => text
+                .setPlaceholder('auto')
+                .setValue(this.plugin.settings.whisperLanguage || 'auto')
+                .onChange((value) => __awaiter(this, void 0, void 0, function* () {
+                this.plugin.settings.whisperLanguage = value;
+                yield this.plugin.saveSettings();
+            })));
+            // Backend Status
+            const backendReady = this.plugin.whisperService.isReady();
+            const statusDesc = backendReady
+                ? 'Local backend is configured and ready'
+                : 'Local backend is not properly configured. Check binary and model paths.';
+            new obsidian.Setting(containerEl)
+                .setName('Backend Status')
+                .setDesc(statusDesc)
+                .addButton((button) => button
+                .setButtonText('Test Configuration')
+                .setIcon('test')
+                .onClick(() => __awaiter(this, void 0, void 0, function* () {
+                if (this.plugin.whisperService.isReady()) {
+                    this.plugin.toast.success('Local whisper.cpp backend is ready!');
+                }
+                else {
+                    this.plugin.toast.error('Backend not ready. Please check binary and model paths.');
+                }
+            })));
+            // Setup Instructions
+            const instructionsEl = containerEl.createDiv('whisper-setup-instructions');
+            instructionsEl.createEl('p', {
+                text: 'To use local whisper.cpp:',
+                cls: 'setting-item-description'
+            });
+            const instructionsList = instructionsEl.createEl('ol', { cls: 'setting-item-description' });
+            instructionsList.createEl('li', { text: 'Install whisper.cpp from https://github.com/ggerganov/whisper.cpp' });
+            instructionsList.createEl('li', { text: 'Download a model file (e.g., ggml-base.en.bin)' });
+            instructionsList.createEl('li', { text: 'Enter the paths to the binary and model above' });
+            instructionsList.createEl('li', { text: 'Click "Test Configuration" to verify setup' });
+        }
     }
     applyMCPSetting(value) {
         return __awaiter(this, void 0, void 0, function* () {

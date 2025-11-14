@@ -1398,13 +1398,13 @@ class ZeddalSettingTab extends PluginSettingTab {
           })
       );
 
-    // Advanced Settings (Future Features)
-    containerEl.createEl('h4', { text: 'Advanced (Future Features)' });
+    // Experimental Features
+    containerEl.createEl('h4', { text: 'Experimental Features' });
 
     // Enable Correction Sharing
     new Setting(containerEl)
       .setName('Enable Correction Sharing')
-      .setDesc('Allow exporting/sharing patterns with community (future feature)')
+      .setDesc('Allow exporting/sharing patterns with community (coming soon)')
       .addToggle((toggle) =>
         toggle
           .setValue(this.plugin.settings.enableCorrectionSharing)
@@ -1418,7 +1418,7 @@ class ZeddalSettingTab extends PluginSettingTab {
     // Enable Cloud Backup
     new Setting(containerEl)
       .setName('Enable Cloud Backup')
-      .setDesc('Sync corrections to cloud storage (future feature)')
+      .setDesc('Sync corrections to cloud storage (coming soon)')
       .addToggle((toggle) =>
         toggle
           .setValue(this.plugin.settings.enableCloudBackup)
@@ -1432,7 +1432,7 @@ class ZeddalSettingTab extends PluginSettingTab {
     // Enable Fine-Tuning
     new Setting(containerEl)
       .setName('Enable Model Fine-Tuning')
-      .setDesc('Use corrections for OpenAI model fine-tuning (future feature)')
+      .setDesc('Use corrections for OpenAI model fine-tuning (coming soon)')
       .addToggle((toggle) =>
         toggle
           .setValue(this.plugin.settings.enableFineTuning)
@@ -1442,6 +1442,115 @@ class ZeddalSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           })
       );
+
+    // Whisper Backend Configuration
+    containerEl.createEl('h4', { text: 'Whisper Backend Configuration' });
+
+    // Backend Selection
+    new Setting(containerEl)
+      .setName('Transcription Backend')
+      .setDesc('Choose between cloud-based OpenAI API (default) or local whisper.cpp')
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption('openai', 'OpenAI Whisper API (cloud)')
+          .addOption('local-cpp', 'Local whisper.cpp (offline)')
+          .setValue(this.plugin.settings.whisperBackend || 'openai')
+          .onChange(async (value) => {
+            this.plugin.settings.whisperBackend = value as 'openai' | 'local-cpp';
+            await this.plugin.saveSettings();
+
+            // Update backend in WhisperService
+            this.plugin.whisperService.updateBackend();
+
+            // Refresh display to show/hide local backend settings
+            this.display();
+
+            // Show status message
+            const backendName = this.plugin.whisperService.getBackendName();
+            this.plugin.toast.info(`Switched to ${backendName}`);
+          })
+      );
+
+    // Show local backend settings only if local-cpp is selected
+    if (this.plugin.settings.whisperBackend === 'local-cpp') {
+      // Whisper.cpp Binary Path
+      new Setting(containerEl)
+        .setName('Whisper.cpp Binary Path')
+        .setDesc('Path to whisper.cpp executable (e.g., /usr/local/bin/whisper)')
+        .addText((text) =>
+          text
+            .setPlaceholder('/usr/local/bin/whisper')
+            .setValue(this.plugin.settings.whisperCppPath || '')
+            .onChange(async (value) => {
+              this.plugin.settings.whisperCppPath = value;
+              await this.plugin.saveSettings();
+              this.plugin.whisperService.updateBackend();
+            })
+        );
+
+      // Whisper Model Path
+      new Setting(containerEl)
+        .setName('Whisper Model Path')
+        .setDesc('Path to whisper model file (e.g., /path/to/ggml-base.en.bin)')
+        .addText((text) =>
+          text
+            .setPlaceholder('/path/to/ggml-base.en.bin')
+            .setValue(this.plugin.settings.whisperModelPath || '')
+            .onChange(async (value) => {
+              this.plugin.settings.whisperModelPath = value;
+              await this.plugin.saveSettings();
+              this.plugin.whisperService.updateBackend();
+            })
+        );
+
+      // Language Override
+      new Setting(containerEl)
+        .setName('Whisper Language')
+        .setDesc('Language code for transcription (e.g., en, es, fr) or "auto" for auto-detect')
+        .addText((text) =>
+          text
+            .setPlaceholder('auto')
+            .setValue(this.plugin.settings.whisperLanguage || 'auto')
+            .onChange(async (value) => {
+              this.plugin.settings.whisperLanguage = value;
+              await this.plugin.saveSettings();
+            })
+        );
+
+      // Backend Status
+      const backendReady = this.plugin.whisperService.isReady();
+      const statusDesc = backendReady
+        ? 'Local backend is configured and ready'
+        : 'Local backend is not properly configured. Check binary and model paths.';
+
+      new Setting(containerEl)
+        .setName('Backend Status')
+        .setDesc(statusDesc)
+        .addButton((button) =>
+          button
+            .setButtonText('Test Configuration')
+            .setIcon('test')
+            .onClick(async () => {
+              if (this.plugin.whisperService.isReady()) {
+                this.plugin.toast.success('Local whisper.cpp backend is ready!');
+              } else {
+                this.plugin.toast.error('Backend not ready. Please check binary and model paths.');
+              }
+            })
+        );
+
+      // Setup Instructions
+      const instructionsEl = containerEl.createDiv('whisper-setup-instructions');
+      instructionsEl.createEl('p', {
+        text: 'To use local whisper.cpp:',
+        cls: 'setting-item-description'
+      });
+      const instructionsList = instructionsEl.createEl('ol', { cls: 'setting-item-description' });
+      instructionsList.createEl('li', { text: 'Install whisper.cpp from https://github.com/ggerganov/whisper.cpp' });
+      instructionsList.createEl('li', { text: 'Download a model file (e.g., ggml-base.en.bin)' });
+      instructionsList.createEl('li', { text: 'Enter the paths to the binary and model above' });
+      instructionsList.createEl('li', { text: 'Click "Test Configuration" to verify setup' });
+    }
   }
 
   private async applyMCPSetting(value: boolean): Promise<void> {

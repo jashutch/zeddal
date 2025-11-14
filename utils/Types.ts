@@ -119,6 +119,11 @@ export interface ZeddalSettings {
   enableCloudBackup: boolean; // Future: backup corrections to cloud
   enableFineTuning: boolean; // Future: use corrections for model fine-tuning
   showSuggestedCorrections: boolean; // Show suggestions from learned patterns
+  // Whisper Backend settings
+  whisperBackend: 'openai' | 'local-cpp' | 'local-python' | 'wasm'; // Transcription backend
+  whisperCppPath: string; // Path to whisper.cpp binary
+  whisperModelPath: string; // Path to whisper model file (e.g., ggml-base.en.bin)
+  whisperLanguage: string; // Language code (e.g., 'en', 'es', 'auto')
 }
 
 export interface AudioChunk {
