@@ -22,10 +22,12 @@ Transform your voice into perfectly formatted, context-aware notes with automati
 - **High Accuracy**: Powered by OpenAI's Whisper (cloud or local)
 
 ### ✨ AI Refinement
-- **Intelligent Enhancement**: GPT-4 automatically improves clarity and readability
+- **Flexible Backend**: Choose between OpenAI GPT-4 or local LLMs (Ollama, llama.cpp, LM Studio)
+- **Intelligent Enhancement**: Automatically improves clarity and readability
 - **Context-Aware**: Considers vault content when refining transcriptions
 - **Configurable**: Choose refinement strength and style
 - **Preserves Intent**: Maintains your original meaning while improving structure
+- **100% Offline Option**: Use local whisper.cpp + local Ollama for completely offline workflow
 
 ### 🔗 Smart Context Linking
 - **Automatic Note Detection**: Finds and links mentions of existing notes
@@ -128,7 +130,69 @@ Once approved by Obsidian:
 - ✅ Faster for small recordings
 - ✅ Private - audio never leaves your computer
 - ⚠️ Requires initial setup and model download
-- ⚠️ GPT-4 refinement still requires internet (optional)
+- ⚠️ GPT-4 refinement still requires internet (optional - can use local LLM)
+
+#### Enable Local LLM (Offline Refinement with Ollama)
+
+**100% Offline Workflow:** Combine local whisper.cpp + local Ollama for completely free, private transcription and refinement!
+
+1. Install Ollama:
+   ```bash
+   # macOS
+   brew install ollama
+
+   # Linux
+   curl -fsSL https://ollama.com/install.sh | sh
+
+   # Or visit https://ollama.com for other platforms
+   ```
+
+2. Pull a model:
+   ```bash
+   # Fast, high quality (recommended)
+   ollama pull llama3.2
+
+   # Your custom model
+   ollama pull gpt-oss:20b
+
+   # Other good options
+   ollama pull mistral        # 7B balanced model
+   ollama pull qwen2.5:14b    # Excellent for notes
+   ```
+
+3. Verify Ollama is running:
+   ```bash
+   ollama list  # Shows installed models
+   ```
+
+4. Configure in Zeddal Settings:
+   - Settings → Zeddal → Local LLM Configuration
+   - Enable Local LLM: Toggle ON
+   - LLM Provider: Select "Ollama (Recommended)"
+   - API Base URL: `http://localhost:11434` (default)
+   - Model Name: `gpt-oss:20b` (or your preferred model)
+   - Click "Test Connection" to verify
+
+**Benefits of Local LLM:**
+- ✅ Zero API costs for refinement
+- ✅ Works completely offline
+- ✅ Private - text never leaves your computer
+- ✅ Use larger models (20B+) without cost concerns
+- ✅ Pairs with local whisper for 100% offline workflow
+- ⚠️ Slower than GPT-4 (depends on hardware)
+- ⚠️ Quality varies by model size
+
+**Recommended Models for Notes:**
+- **llama3.2** (3B) - Fast, good quality
+- **gpt-oss:20b** - Your current model, high quality
+- **mistral** (7B) - Balanced speed/quality
+- **qwen2.5:14b** - Excellent for structured notes
+
+**Supported Providers:**
+- Ollama (http://localhost:11434) ← Recommended
+- llama.cpp server
+- LM Studio
+- OpenAI-compatible APIs
 
 #### Enable RAG Context
 1. Settings → Zeddal → RAG Settings
@@ -172,6 +236,16 @@ Once approved by Obsidian:
 | **Whisper.cpp Binary Path** | Path to whisper.cpp executable | `/usr/local/bin/whisper` |
 | **Whisper Model Path** | Path to GGML model file | - |
 | **Whisper Language** | Language code or `auto` for detection | `auto` |
+
+### Local LLM Settings
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| **Enable Local LLM** | Use local LLM instead of OpenAI for refinement | `false` |
+| **LLM Provider** | Provider type (Ollama, llama.cpp, LM Studio, etc.) | `ollama` |
+| **API Base URL** | Base URL for local LLM | `http://localhost:11434` |
+| **Model Name** | Model to use for refinement | `llama3.2` |
+| **API Key** | Optional API key (not needed for Ollama/llama.cpp) | - |
 
 ### Recording Settings
 

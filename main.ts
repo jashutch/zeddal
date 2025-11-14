@@ -1551,6 +1551,167 @@ class ZeddalSettingTab extends PluginSettingTab {
       instructionsList.createEl('li', { text: 'Enter the paths to the binary and model above' });
       instructionsList.createEl('li', { text: 'Click "Test Configuration" to verify setup' });
     }
+
+    // Local LLM Configuration
+    containerEl.createEl('h4', { text: 'Local LLM Configuration' });
+    containerEl.createEl('p', {
+      text: 'Use local LLMs (Ollama, llama.cpp, LM Studio) for offline refinement. Pairs perfectly with local whisper.cpp for 100% offline workflow.',
+      cls: 'setting-item-description'
+    });
+
+    // Enable Local LLM
+    new Setting(containerEl)
+      .setName('Enable Local LLM')
+      .setDesc('Use local LLM instead of OpenAI for refinement')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.enableLocalLLM)
+          .onChange(async (value) => {
+            this.plugin.settings.enableLocalLLM = value;
+            await this.plugin.saveSettings();
+
+            // Update backend in LLMRefineService
+            this.plugin.llmRefineService.updateBackend();
+
+            // Refresh display to show/hide local LLM settings
+            this.display();
+
+            // Show status message
+            const backend = this.plugin.llmRefineService.getBackendName();
+            this.plugin.toast.info(`LLM backend: ${backend}`);
+          })
+      );
+
+    // Show local LLM settings only if enabled
+    if (this.plugin.settings.enableLocalLLM) {
+      // LLM Provider Selection
+      new Setting(containerEl)
+        .setName('LLM Provider')
+        .setDesc('Choose your local LLM provider')
+        .addDropdown((dropdown) =>
+          dropdown
+            .addOption('ollama', 'Ollama (Recommended)')
+            .addOption('llamacpp', 'llama.cpp server')
+            .addOption('lmstudio', 'LM Studio')
+            .addOption('openai-compatible', 'OpenAI-compatible API')
+            .setValue(this.plugin.settings.localLLMProvider || 'ollama')
+            .onChange(async (value) => {
+              this.plugin.settings.localLLMProvider = value as any;
+              await this.plugin.saveSettings();
+              this.plugin.llmRefineService.updateBackend();
+            })
+        );
+
+      // Base URL
+      new Setting(containerEl)
+        .setName('API Base URL')
+        .setDesc('Base URL for your local LLM (e.g., http://localhost:11434 for Ollama)')
+        .addText((text) =>
+          text
+            .setPlaceholder('http://localhost:11434')
+            .setValue(this.plugin.settings.localLLMBaseUrl || '')
+            .onChange(async (value) => {
+              this.plugin.settings.localLLMBaseUrl = value;
+              await this.plugin.saveSettings();
+              this.plugin.llmRefineService.updateBackend();
+            })
+        );
+
+      // Model Name
+      new Setting(containerEl)
+        .setName('Model Name')
+        .setDesc('Name of the model to use (e.g., llama3.2, mistral, gpt-oss:20b)')
+        .addText((text) =>
+          text
+            .setPlaceholder('llama3.2')
+            .setValue(this.plugin.settings.localLLMModel || '')
+            .onChange(async (value) => {
+              this.plugin.settings.localLLMModel = value;
+              await this.plugin.saveSettings();
+              this.plugin.llmRefineService.updateBackend();
+            })
+        );
+
+      // API Key (optional)
+      new Setting(containerEl)
+        .setName('API Key (Optional)')
+        .setDesc('API key if required by your provider (leave empty for Ollama/llama.cpp)')
+        .addText((text) =>
+          text
+            .setPlaceholder('Optional')
+            .setValue(this.plugin.settings.localLLMApiKey || '')
+            .onChange(async (value) => {
+              this.plugin.settings.localLLMApiKey = value;
+              await this.plugin.saveSettings();
+              this.plugin.llmRefineService.updateBackend();
+            })
+        );
+
+      // Test Connection Button
+      new Setting(containerEl)
+        .setName('Test Connection')
+        .setDesc('Verify your local LLM is accessible and working')
+        .addButton((button) =>
+          button
+            .setButtonText('Test Connection')
+            .setIcon('zap')
+            .onClick(async () => {
+              button.setDisabled(true);
+              button.setButtonText('Testing...');
+
+              try {
+                const llmRefineService = this.plugin.llmRefineService as any;
+                if (!llmRefineService.localLLMService) {
+                  this.plugin.toast.error('Local LLM not initialized');
+                  return;
+                }
+
+                const result = await llmRefineService.localLLMService.testConnection();
+
+                if (result.success) {
+                  this.plugin.toast.success(`Connected to ${result.model}!`);
+                } else {
+                  this.plugin.toast.error(`Connection failed: ${result.error}`);
+                }
+              } catch (error: any) {
+                this.plugin.toast.error(`Test failed: ${error.message}`);
+              } finally {
+                button.setDisabled(false);
+                button.setButtonText('Test Connection');
+              }
+            })
+        );
+
+      // Setup Instructions for Ollama
+      if (this.plugin.settings.localLLMProvider === 'ollama') {
+        const instructionsEl = containerEl.createDiv('local-llm-instructions');
+        instructionsEl.createEl('p', {
+          text: 'Ollama Setup:',
+          cls: 'setting-item-description'
+        });
+        const ollamaList = instructionsEl.createEl('ol', { cls: 'setting-item-description' });
+        ollamaList.createEl('li', { text: 'Install Ollama: brew install ollama (macOS) or visit ollama.com' });
+        ollamaList.createEl('li', { text: 'Pull a model: ollama pull llama3.2 (or gpt-oss:20b, mistral, etc.)' });
+        ollamaList.createEl('li', { text: 'Verify running: ollama list (shows installed models)' });
+        ollamaList.createEl('li', { text: 'Enter model name above and click "Test Connection"' });
+
+        const noteEl = instructionsEl.createEl('p', { cls: 'setting-item-description' });
+        noteEl.innerHTML = '<strong>Recommended models:</strong><br/>• llama3.2 (3B) - Fast, good quality<br/>• mistral (7B) - Balanced<br/>• gpt-oss:20b - Large, high quality<br/>• qwen2.5:14b - Excellent for notes';
+      }
+
+      // Fallback Option
+      new Setting(containerEl)
+        .setName('Fallback to OpenAI')
+        .setDesc('If enabled and local LLM fails, automatically fallback to OpenAI (requires API key)')
+        .addToggle((toggle) =>
+          toggle
+            .setValue(true) // Always enabled for now
+            .setDisabled(true)
+            .onChange(async (value) => {
+              // Reserved for future use
+            })
+        );
+    }
   }
 
   private async applyMCPSetting(value: boolean): Promise<void> {

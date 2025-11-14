@@ -1037,50 +1037,385 @@ class CitationHelper {
 // Copyright © 2025 Jason Hutchcraft
 // Licensed under the Business Source License 1.1 (see LICENSE for details)
 // Change Date: 2029-01-01 → Apache 2.0 License
-class LLMRefineService {
-    constructor(config) {
-        this.config = config;
+class LocalLLMService {
+    constructor(provider) {
+        this.defaultPromptTemplate = `You are a helpful assistant that refines transcribed text based on user instructions.
+
+Original transcription:
+{original}
+
+User instruction:
+{instruction}
+
+Please apply the requested changes to the transcription. Return ONLY the refined text without any explanations or preamble.
+
+Refined transcription:`;
+        this.provider = provider;
     }
     /**
-     * Refine transcription with GPT-4 and optional context
+     * Refine text based on user instruction
+     */
+    refineWithInstruction(instruction) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const startTime = Date.now();
+            try {
+                const prompt = this.buildPrompt(instruction);
+                const response = yield this.callLLM(prompt);
+                return {
+                    success: true,
+                    refinedText: response.text,
+                    provider: this.provider.type,
+                    model: this.provider.model,
+                    tokensUsed: response.tokensUsed,
+                    duration: Date.now() - startTime,
+                };
+            }
+            catch (error) {
+                console.error('Local LLM refinement failed:', error);
+                return {
+                    success: false,
+                    refinedText: instruction.originalText,
+                    error: error instanceof Error ? error.message : 'Unknown error',
+                    provider: this.provider.type,
+                    model: this.provider.model,
+                    duration: Date.now() - startTime,
+                };
+            }
+        });
+    }
+    /**
+     * Build prompt from instruction
+     */
+    buildPrompt(instruction) {
+        return this.defaultPromptTemplate
+            .replace('{original}', instruction.originalText)
+            .replace('{instruction}', instruction.content);
+    }
+    /**
+     * Call the appropriate LLM provider
+     */
+    callLLM(prompt) {
+        return __awaiter(this, void 0, void 0, function* () {
+            switch (this.provider.type) {
+                case 'ollama':
+                    return yield this.callOllama(prompt);
+                case 'llamacpp':
+                    return yield this.callLlamaCpp(prompt);
+                case 'lmstudio':
+                    return yield this.callLMStudio(prompt);
+                case 'openai-compatible':
+                    return yield this.callOpenAICompatible(prompt);
+                case 'openai':
+                    return yield this.callOpenAI(prompt);
+                default:
+                    throw new Error(`Unsupported provider: ${this.provider.type}`);
+            }
+        });
+    }
+    /**
+     * Call Ollama API
+     * Docs: https://github.com/ollama/ollama/blob/main/docs/api.md
+     */
+    callOllama(prompt) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const response = yield fetch(`${this.provider.baseUrl}/api/generate`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    model: this.provider.model,
+                    prompt: prompt,
+                    stream: false,
+                }),
+            });
+            if (!response.ok) {
+                throw new Error(`Ollama API error: ${response.statusText}`);
+            }
+            const data = yield response.json();
+            return {
+                text: data.response || '',
+                tokensUsed: data.eval_count || undefined,
+            };
+        });
+    }
+    /**
+     * Call llama.cpp server
+     * Docs: https://github.com/ggerganov/llama.cpp/blob/master/examples/server/README.md
+     */
+    callLlamaCpp(prompt) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const response = yield fetch(`${this.provider.baseUrl}/completion`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    prompt: prompt,
+                    temperature: 0.3,
+                    top_k: 40,
+                    top_p: 0.9,
+                    n_predict: 2048,
+                    stop: ['\n\n\n'], // Stop on triple newline
+                }),
+            });
+            if (!response.ok) {
+                throw new Error(`llama.cpp API error: ${response.statusText}`);
+            }
+            const data = yield response.json();
+            return {
+                text: data.content || '',
+                tokensUsed: data.tokens_predicted || undefined,
+            };
+        });
+    }
+    /**
+     * Call LM Studio (OpenAI-compatible API)
+     * Docs: https://lmstudio.ai/docs/api/openai-api
+     */
+    callLMStudio(prompt) {
+        return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b, _c;
+            const response = yield fetch(`${this.provider.baseUrl}/v1/chat/completions`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    model: this.provider.model,
+                    messages: [
+                        {
+                            role: 'user',
+                            content: prompt,
+                        },
+                    ],
+                    temperature: 0.3,
+                    max_tokens: 2048,
+                }),
+            });
+            if (!response.ok) {
+                throw new Error(`LM Studio API error: ${response.statusText}`);
+            }
+            const data = yield response.json();
+            return {
+                text: ((_b = (_a = data.choices[0]) === null || _a === void 0 ? void 0 : _a.message) === null || _b === void 0 ? void 0 : _b.content) || '',
+                tokensUsed: ((_c = data.usage) === null || _c === void 0 ? void 0 : _c.total_tokens) || undefined,
+            };
+        });
+    }
+    /**
+     * Call OpenAI-compatible API (generic)
+     */
+    callOpenAICompatible(prompt) {
+        return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b, _c;
+            const headers = {
+                'Content-Type': 'application/json',
+            };
+            if (this.provider.apiKey) {
+                headers['Authorization'] = `Bearer ${this.provider.apiKey}`;
+            }
+            const response = yield fetch(`${this.provider.baseUrl}/v1/chat/completions`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                    model: this.provider.model,
+                    messages: [
+                        {
+                            role: 'user',
+                            content: prompt,
+                        },
+                    ],
+                    temperature: 0.3,
+                    max_tokens: 2048,
+                }),
+            });
+            if (!response.ok) {
+                throw new Error(`OpenAI-compatible API error: ${response.statusText}`);
+            }
+            const data = yield response.json();
+            return {
+                text: ((_b = (_a = data.choices[0]) === null || _a === void 0 ? void 0 : _a.message) === null || _b === void 0 ? void 0 : _b.content) || '',
+                tokensUsed: ((_c = data.usage) === null || _c === void 0 ? void 0 : _c.total_tokens) || undefined,
+            };
+        });
+    }
+    /**
+     * Call OpenAI API (fallback)
+     */
+    callOpenAI(prompt) {
+        return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b, _c;
+            if (!this.provider.apiKey) {
+                throw new Error('OpenAI API key required');
+            }
+            const response = yield fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${this.provider.apiKey}`,
+                },
+                body: JSON.stringify({
+                    model: this.provider.model || 'gpt-4-turbo',
+                    messages: [
+                        {
+                            role: 'user',
+                            content: prompt,
+                        },
+                    ],
+                    temperature: 0.3,
+                    max_tokens: 2048,
+                }),
+            });
+            if (!response.ok) {
+                throw new Error(`OpenAI API error: ${response.statusText}`);
+            }
+            const data = yield response.json();
+            return {
+                text: ((_b = (_a = data.choices[0]) === null || _a === void 0 ? void 0 : _a.message) === null || _b === void 0 ? void 0 : _b.content) || '',
+                tokensUsed: ((_c = data.usage) === null || _c === void 0 ? void 0 : _c.total_tokens) || undefined,
+            };
+        });
+    }
+    /**
+     * Test connection to LLM provider
+     */
+    testConnection() {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                const testPrompt = 'Hello! Please respond with "OK" to confirm the connection.';
+                const response = yield this.callLLM(testPrompt);
+                return {
+                    success: true,
+                    model: this.provider.model,
+                };
+            }
+            catch (error) {
+                return {
+                    success: false,
+                    error: error instanceof Error ? error.message : 'Unknown error',
+                };
+            }
+        });
+    }
+    /**
+     * List available models (Ollama only)
+     */
+    listModels() {
+        return __awaiter(this, void 0, void 0, function* () {
+            var _a;
+            if (this.provider.type !== 'ollama') {
+                throw new Error('Model listing only supported for Ollama');
+            }
+            try {
+                const response = yield fetch(`${this.provider.baseUrl}/api/tags`);
+                if (!response.ok) {
+                    throw new Error(`Failed to list models: ${response.statusText}`);
+                }
+                const data = yield response.json();
+                return ((_a = data.models) === null || _a === void 0 ? void 0 : _a.map((m) => m.name)) || [];
+            }
+            catch (error) {
+                console.error('Failed to list Ollama models:', error);
+                return [];
+            }
+        });
+    }
+    /**
+     * Update provider settings
+     */
+    updateProvider(provider) {
+        this.provider = Object.assign(Object.assign({}, this.provider), provider);
+    }
+    /**
+     * Get current provider info
+     */
+    getProvider() {
+        return Object.assign({}, this.provider);
+    }
+    /**
+     * Set custom prompt template
+     */
+    setPromptTemplate(template) {
+        this.defaultPromptTemplate = template;
+    }
+}
+
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
+class LLMRefineService {
+    constructor(config) {
+        this.localLLMService = null;
+        this.config = config;
+        this.initializeLocalLLM();
+    }
+    /**
+     * Initialize local LLM service if enabled
+     */
+    initializeLocalLLM() {
+        if (this.config.get('enableLocalLLM')) {
+            const provider = {
+                type: this.config.get('localLLMProvider'),
+                baseUrl: this.config.get('localLLMBaseUrl'),
+                model: this.config.get('localLLMModel'),
+                apiKey: this.config.get('localLLMApiKey') || undefined,
+            };
+            this.localLLMService = new LocalLLMService(provider);
+            console.log('[LLMRefineService] Local LLM enabled:', provider.type, provider.model);
+        }
+        else {
+            this.localLLMService = null;
+        }
+    }
+    /**
+     * Update LLM backend when settings change
+     */
+    updateBackend() {
+        this.initializeLocalLLM();
+        const backend = this.getBackendName();
+        console.log(`[LLMRefineService] Backend updated: ${backend}`);
+    }
+    /**
+     * Get current backend name for debugging
+     */
+    getBackendName() {
+        if (this.config.get('enableLocalLLM') && this.localLLMService) {
+            const provider = this.localLLMService.getProvider();
+            return `${provider.type} (${provider.model})`;
+        }
+        return 'OpenAI GPT-4';
+    }
+    /**
+     * Refine transcription with LLM (local or OpenAI) and optional context
      */
     refine(text_1) {
         return __awaiter(this, arguments, void 0, function* (text, context = [], userPrompt) {
-            var _a, _b, _c, _d;
-            const apiKey = this.config.get('openaiApiKey');
-            if (!apiKey) {
-                throw new Error('OpenAI API key not configured');
-            }
             try {
-                // Build system prompt
-                const systemPrompt = this.buildSystemPrompt(context);
-                // Build user message
-                const userMessage = userPrompt
-                    ? `${userPrompt}\n\nTranscription to refine:\n${text}`
-                    : `Please refine the following voice transcription into a well-structured note:\n\n${text}`;
-                // Call GPT-4 API directly (fetch instead of SDK for consistency)
-                const response = yield fetch('https://api.openai.com/v1/chat/completions', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${apiKey}`,
-                    },
-                    body: JSON.stringify({
-                        model: this.config.get('gptModel'),
-                        messages: [
-                            { role: 'system', content: systemPrompt },
-                            { role: 'user', content: userMessage },
-                        ],
-                        temperature: 0.7,
-                        max_tokens: 2000,
-                    }),
-                });
-                if (!response.ok) {
-                    const errorData = yield response.json().catch(() => ({}));
-                    throw new Error(`GPT-4 API error: ${response.status} - ${JSON.stringify(errorData)}`);
+                let refinedText;
+                // Try local LLM first if enabled
+                if (this.config.get('enableLocalLLM') && this.localLLMService) {
+                    console.log('[LLMRefineService] Using local LLM for refinement');
+                    try {
+                        refinedText = yield this.refineWithLocalLLM(text, context, userPrompt);
+                    }
+                    catch (error) {
+                        console.warn('[LLMRefineService] Local LLM failed, falling back to OpenAI:', error);
+                        // Fallback to OpenAI
+                        const apiKey = this.config.get('openaiApiKey');
+                        if (apiKey) {
+                            refinedText = yield this.refineWithOpenAI(text, context, userPrompt);
+                        }
+                        else {
+                            throw new Error('Local LLM failed and no OpenAI API key configured for fallback');
+                        }
+                    }
                 }
-                const data = yield response.json();
-                const refinedText = ((_d = (_c = (_b = (_a = data.choices) === null || _a === void 0 ? void 0 : _a[0]) === null || _b === void 0 ? void 0 : _b.message) === null || _c === void 0 ? void 0 : _c.content) === null || _d === void 0 ? void 0 : _d.trim()) || text;
+                else {
+                    // Use OpenAI by default
+                    console.log('[LLMRefineService] Using OpenAI for refinement');
+                    refinedText = yield this.refineWithOpenAI(text, context, userPrompt);
+                }
                 // Generate title
                 const title = yield this.generateTitle(refinedText);
                 // Extract potential wikilinks
@@ -1104,6 +1439,73 @@ class LLMRefineService {
                 });
                 throw error;
             }
+        });
+    }
+    /**
+     * Refine using local LLM
+     */
+    refineWithLocalLLM(text_1) {
+        return __awaiter(this, arguments, void 0, function* (text, context = [], userPrompt) {
+            if (!this.localLLMService) {
+                throw new Error('Local LLM service not initialized');
+            }
+            // Build combined prompt for local LLM
+            const systemPrompt = this.buildSystemPrompt(context);
+            const userMessage = userPrompt
+                ? `${userPrompt}\n\nTranscription to refine:\n${text}`
+                : `Please refine the following voice transcription into a well-structured note:\n\n${text}`;
+            const fullPrompt = `${systemPrompt}\n\n${userMessage}`;
+            // Use LocalLLMService with instruction-based refinement
+            const result = yield this.localLLMService.refineWithInstruction({
+                type: 'voice',
+                content: fullPrompt,
+                originalText: text,
+            });
+            if (!result.success) {
+                throw new Error(result.error || 'Local LLM refinement failed');
+            }
+            return result.refinedText;
+        });
+    }
+    /**
+     * Refine using OpenAI GPT-4
+     */
+    refineWithOpenAI(text_1) {
+        return __awaiter(this, arguments, void 0, function* (text, context = [], userPrompt) {
+            var _a, _b, _c, _d;
+            const apiKey = this.config.get('openaiApiKey');
+            if (!apiKey) {
+                throw new Error('OpenAI API key not configured');
+            }
+            // Build system prompt
+            const systemPrompt = this.buildSystemPrompt(context);
+            // Build user message
+            const userMessage = userPrompt
+                ? `${userPrompt}\n\nTranscription to refine:\n${text}`
+                : `Please refine the following voice transcription into a well-structured note:\n\n${text}`;
+            // Call GPT-4 API directly
+            const response = yield fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`,
+                },
+                body: JSON.stringify({
+                    model: this.config.get('gptModel'),
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: userMessage },
+                    ],
+                    temperature: 0.7,
+                    max_tokens: 2000,
+                }),
+            });
+            if (!response.ok) {
+                const errorData = yield response.json().catch(() => ({}));
+                throw new Error(`GPT-4 API error: ${response.status} - ${JSON.stringify(errorData)}`);
+            }
+            const data = yield response.json();
+            return ((_d = (_c = (_b = (_a = data.choices) === null || _a === void 0 ? void 0 : _a[0]) === null || _b === void 0 ? void 0 : _b.message) === null || _c === void 0 ? void 0 : _c.content) === null || _d === void 0 ? void 0 : _d.trim()) || text;
         });
     }
     /**
@@ -1214,9 +1616,16 @@ class LLMRefineService {
         return title + (firstSentence.length > 60 ? '...' : '');
     }
     /**
-     * Check if service is ready
+     * Check if service is ready (either local LLM or OpenAI)
      */
     isReady() {
+        // If local LLM is enabled, check if it's configured
+        if (this.config.get('enableLocalLLM')) {
+            const baseUrl = this.config.get('localLLMBaseUrl');
+            const model = this.config.get('localLLMModel');
+            return baseUrl !== '' && model !== '';
+        }
+        // Otherwise check OpenAI API key
         const apiKey = this.config.get('openaiApiKey');
         return apiKey !== null && apiKey !== undefined && apiKey.length > 0;
     }
@@ -24139,313 +24548,6 @@ class QuickFixService {
 // Copyright © 2025 Jason Hutchcraft
 // Licensed under the Business Source License 1.1 (see LICENSE for details)
 // Change Date: 2029-01-01 → Apache 2.0 License
-class LocalLLMService {
-    constructor(provider) {
-        this.defaultPromptTemplate = `You are a helpful assistant that refines transcribed text based on user instructions.
-
-Original transcription:
-{original}
-
-User instruction:
-{instruction}
-
-Please apply the requested changes to the transcription. Return ONLY the refined text without any explanations or preamble.
-
-Refined transcription:`;
-        this.provider = provider;
-    }
-    /**
-     * Refine text based on user instruction
-     */
-    refineWithInstruction(instruction) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const startTime = Date.now();
-            try {
-                const prompt = this.buildPrompt(instruction);
-                const response = yield this.callLLM(prompt);
-                return {
-                    success: true,
-                    refinedText: response.text,
-                    provider: this.provider.type,
-                    model: this.provider.model,
-                    tokensUsed: response.tokensUsed,
-                    duration: Date.now() - startTime,
-                };
-            }
-            catch (error) {
-                console.error('Local LLM refinement failed:', error);
-                return {
-                    success: false,
-                    refinedText: instruction.originalText,
-                    error: error instanceof Error ? error.message : 'Unknown error',
-                    provider: this.provider.type,
-                    model: this.provider.model,
-                    duration: Date.now() - startTime,
-                };
-            }
-        });
-    }
-    /**
-     * Build prompt from instruction
-     */
-    buildPrompt(instruction) {
-        return this.defaultPromptTemplate
-            .replace('{original}', instruction.originalText)
-            .replace('{instruction}', instruction.content);
-    }
-    /**
-     * Call the appropriate LLM provider
-     */
-    callLLM(prompt) {
-        return __awaiter(this, void 0, void 0, function* () {
-            switch (this.provider.type) {
-                case 'ollama':
-                    return yield this.callOllama(prompt);
-                case 'llamacpp':
-                    return yield this.callLlamaCpp(prompt);
-                case 'lmstudio':
-                    return yield this.callLMStudio(prompt);
-                case 'openai-compatible':
-                    return yield this.callOpenAICompatible(prompt);
-                case 'openai':
-                    return yield this.callOpenAI(prompt);
-                default:
-                    throw new Error(`Unsupported provider: ${this.provider.type}`);
-            }
-        });
-    }
-    /**
-     * Call Ollama API
-     * Docs: https://github.com/ollama/ollama/blob/main/docs/api.md
-     */
-    callOllama(prompt) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const response = yield fetch(`${this.provider.baseUrl}/api/generate`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    model: this.provider.model,
-                    prompt: prompt,
-                    stream: false,
-                }),
-            });
-            if (!response.ok) {
-                throw new Error(`Ollama API error: ${response.statusText}`);
-            }
-            const data = yield response.json();
-            return {
-                text: data.response || '',
-                tokensUsed: data.eval_count || undefined,
-            };
-        });
-    }
-    /**
-     * Call llama.cpp server
-     * Docs: https://github.com/ggerganov/llama.cpp/blob/master/examples/server/README.md
-     */
-    callLlamaCpp(prompt) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const response = yield fetch(`${this.provider.baseUrl}/completion`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    prompt: prompt,
-                    temperature: 0.3,
-                    top_k: 40,
-                    top_p: 0.9,
-                    n_predict: 2048,
-                    stop: ['\n\n\n'], // Stop on triple newline
-                }),
-            });
-            if (!response.ok) {
-                throw new Error(`llama.cpp API error: ${response.statusText}`);
-            }
-            const data = yield response.json();
-            return {
-                text: data.content || '',
-                tokensUsed: data.tokens_predicted || undefined,
-            };
-        });
-    }
-    /**
-     * Call LM Studio (OpenAI-compatible API)
-     * Docs: https://lmstudio.ai/docs/api/openai-api
-     */
-    callLMStudio(prompt) {
-        return __awaiter(this, void 0, void 0, function* () {
-            var _a, _b, _c;
-            const response = yield fetch(`${this.provider.baseUrl}/v1/chat/completions`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    model: this.provider.model,
-                    messages: [
-                        {
-                            role: 'user',
-                            content: prompt,
-                        },
-                    ],
-                    temperature: 0.3,
-                    max_tokens: 2048,
-                }),
-            });
-            if (!response.ok) {
-                throw new Error(`LM Studio API error: ${response.statusText}`);
-            }
-            const data = yield response.json();
-            return {
-                text: ((_b = (_a = data.choices[0]) === null || _a === void 0 ? void 0 : _a.message) === null || _b === void 0 ? void 0 : _b.content) || '',
-                tokensUsed: ((_c = data.usage) === null || _c === void 0 ? void 0 : _c.total_tokens) || undefined,
-            };
-        });
-    }
-    /**
-     * Call OpenAI-compatible API (generic)
-     */
-    callOpenAICompatible(prompt) {
-        return __awaiter(this, void 0, void 0, function* () {
-            var _a, _b, _c;
-            const headers = {
-                'Content-Type': 'application/json',
-            };
-            if (this.provider.apiKey) {
-                headers['Authorization'] = `Bearer ${this.provider.apiKey}`;
-            }
-            const response = yield fetch(`${this.provider.baseUrl}/v1/chat/completions`, {
-                method: 'POST',
-                headers,
-                body: JSON.stringify({
-                    model: this.provider.model,
-                    messages: [
-                        {
-                            role: 'user',
-                            content: prompt,
-                        },
-                    ],
-                    temperature: 0.3,
-                    max_tokens: 2048,
-                }),
-            });
-            if (!response.ok) {
-                throw new Error(`OpenAI-compatible API error: ${response.statusText}`);
-            }
-            const data = yield response.json();
-            return {
-                text: ((_b = (_a = data.choices[0]) === null || _a === void 0 ? void 0 : _a.message) === null || _b === void 0 ? void 0 : _b.content) || '',
-                tokensUsed: ((_c = data.usage) === null || _c === void 0 ? void 0 : _c.total_tokens) || undefined,
-            };
-        });
-    }
-    /**
-     * Call OpenAI API (fallback)
-     */
-    callOpenAI(prompt) {
-        return __awaiter(this, void 0, void 0, function* () {
-            var _a, _b, _c;
-            if (!this.provider.apiKey) {
-                throw new Error('OpenAI API key required');
-            }
-            const response = yield fetch('https://api.openai.com/v1/chat/completions', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${this.provider.apiKey}`,
-                },
-                body: JSON.stringify({
-                    model: this.provider.model || 'gpt-4-turbo',
-                    messages: [
-                        {
-                            role: 'user',
-                            content: prompt,
-                        },
-                    ],
-                    temperature: 0.3,
-                    max_tokens: 2048,
-                }),
-            });
-            if (!response.ok) {
-                throw new Error(`OpenAI API error: ${response.statusText}`);
-            }
-            const data = yield response.json();
-            return {
-                text: ((_b = (_a = data.choices[0]) === null || _a === void 0 ? void 0 : _a.message) === null || _b === void 0 ? void 0 : _b.content) || '',
-                tokensUsed: ((_c = data.usage) === null || _c === void 0 ? void 0 : _c.total_tokens) || undefined,
-            };
-        });
-    }
-    /**
-     * Test connection to LLM provider
-     */
-    testConnection() {
-        return __awaiter(this, void 0, void 0, function* () {
-            try {
-                const testPrompt = 'Hello! Please respond with "OK" to confirm the connection.';
-                const response = yield this.callLLM(testPrompt);
-                return {
-                    success: true,
-                    model: this.provider.model,
-                };
-            }
-            catch (error) {
-                return {
-                    success: false,
-                    error: error instanceof Error ? error.message : 'Unknown error',
-                };
-            }
-        });
-    }
-    /**
-     * List available models (Ollama only)
-     */
-    listModels() {
-        return __awaiter(this, void 0, void 0, function* () {
-            var _a;
-            if (this.provider.type !== 'ollama') {
-                throw new Error('Model listing only supported for Ollama');
-            }
-            try {
-                const response = yield fetch(`${this.provider.baseUrl}/api/tags`);
-                if (!response.ok) {
-                    throw new Error(`Failed to list models: ${response.statusText}`);
-                }
-                const data = yield response.json();
-                return ((_a = data.models) === null || _a === void 0 ? void 0 : _a.map((m) => m.name)) || [];
-            }
-            catch (error) {
-                console.error('Failed to list Ollama models:', error);
-                return [];
-            }
-        });
-    }
-    /**
-     * Update provider settings
-     */
-    updateProvider(provider) {
-        this.provider = Object.assign(Object.assign({}, this.provider), provider);
-    }
-    /**
-     * Get current provider info
-     */
-    getProvider() {
-        return Object.assign({}, this.provider);
-    }
-    /**
-     * Set custom prompt template
-     */
-    setPromptTemplate(template) {
-        this.defaultPromptTemplate = template;
-    }
-}
-
-// Copyright © 2025 Jason Hutchcraft
-// Licensed under the Business Source License 1.1 (see LICENSE for details)
-// Change Date: 2029-01-01 → Apache 2.0 License
 class RecordModal extends obsidian.Modal {
     constructor(app, recorderService, whisperService, llmRefineService, vaultOps, toast, plugin, contextLinkService, vaultRAGService, mcpClientService, audioFileService, qaSessionService, transcriptFormatter, correctionDb, unifiedRefinement, savedAudioFile) {
         super(app);
@@ -29696,6 +29798,140 @@ class ZeddalSettingTab extends obsidian.PluginSettingTab {
             instructionsList.createEl('li', { text: 'Download a model file (e.g., ggml-base.en.bin)' });
             instructionsList.createEl('li', { text: 'Enter the paths to the binary and model above' });
             instructionsList.createEl('li', { text: 'Click "Test Configuration" to verify setup' });
+        }
+        // Local LLM Configuration
+        containerEl.createEl('h4', { text: 'Local LLM Configuration' });
+        containerEl.createEl('p', {
+            text: 'Use local LLMs (Ollama, llama.cpp, LM Studio) for offline refinement. Pairs perfectly with local whisper.cpp for 100% offline workflow.',
+            cls: 'setting-item-description'
+        });
+        // Enable Local LLM
+        new obsidian.Setting(containerEl)
+            .setName('Enable Local LLM')
+            .setDesc('Use local LLM instead of OpenAI for refinement')
+            .addToggle((toggle) => toggle
+            .setValue(this.plugin.settings.enableLocalLLM)
+            .onChange((value) => __awaiter(this, void 0, void 0, function* () {
+            this.plugin.settings.enableLocalLLM = value;
+            yield this.plugin.saveSettings();
+            // Update backend in LLMRefineService
+            this.plugin.llmRefineService.updateBackend();
+            // Refresh display to show/hide local LLM settings
+            this.display();
+            // Show status message
+            const backend = this.plugin.llmRefineService.getBackendName();
+            this.plugin.toast.info(`LLM backend: ${backend}`);
+        })));
+        // Show local LLM settings only if enabled
+        if (this.plugin.settings.enableLocalLLM) {
+            // LLM Provider Selection
+            new obsidian.Setting(containerEl)
+                .setName('LLM Provider')
+                .setDesc('Choose your local LLM provider')
+                .addDropdown((dropdown) => dropdown
+                .addOption('ollama', 'Ollama (Recommended)')
+                .addOption('llamacpp', 'llama.cpp server')
+                .addOption('lmstudio', 'LM Studio')
+                .addOption('openai-compatible', 'OpenAI-compatible API')
+                .setValue(this.plugin.settings.localLLMProvider || 'ollama')
+                .onChange((value) => __awaiter(this, void 0, void 0, function* () {
+                this.plugin.settings.localLLMProvider = value;
+                yield this.plugin.saveSettings();
+                this.plugin.llmRefineService.updateBackend();
+            })));
+            // Base URL
+            new obsidian.Setting(containerEl)
+                .setName('API Base URL')
+                .setDesc('Base URL for your local LLM (e.g., http://localhost:11434 for Ollama)')
+                .addText((text) => text
+                .setPlaceholder('http://localhost:11434')
+                .setValue(this.plugin.settings.localLLMBaseUrl || '')
+                .onChange((value) => __awaiter(this, void 0, void 0, function* () {
+                this.plugin.settings.localLLMBaseUrl = value;
+                yield this.plugin.saveSettings();
+                this.plugin.llmRefineService.updateBackend();
+            })));
+            // Model Name
+            new obsidian.Setting(containerEl)
+                .setName('Model Name')
+                .setDesc('Name of the model to use (e.g., llama3.2, mistral, gpt-oss:20b)')
+                .addText((text) => text
+                .setPlaceholder('llama3.2')
+                .setValue(this.plugin.settings.localLLMModel || '')
+                .onChange((value) => __awaiter(this, void 0, void 0, function* () {
+                this.plugin.settings.localLLMModel = value;
+                yield this.plugin.saveSettings();
+                this.plugin.llmRefineService.updateBackend();
+            })));
+            // API Key (optional)
+            new obsidian.Setting(containerEl)
+                .setName('API Key (Optional)')
+                .setDesc('API key if required by your provider (leave empty for Ollama/llama.cpp)')
+                .addText((text) => text
+                .setPlaceholder('Optional')
+                .setValue(this.plugin.settings.localLLMApiKey || '')
+                .onChange((value) => __awaiter(this, void 0, void 0, function* () {
+                this.plugin.settings.localLLMApiKey = value;
+                yield this.plugin.saveSettings();
+                this.plugin.llmRefineService.updateBackend();
+            })));
+            // Test Connection Button
+            new obsidian.Setting(containerEl)
+                .setName('Test Connection')
+                .setDesc('Verify your local LLM is accessible and working')
+                .addButton((button) => button
+                .setButtonText('Test Connection')
+                .setIcon('zap')
+                .onClick(() => __awaiter(this, void 0, void 0, function* () {
+                button.setDisabled(true);
+                button.setButtonText('Testing...');
+                try {
+                    const llmRefineService = this.plugin.llmRefineService;
+                    if (!llmRefineService.localLLMService) {
+                        this.plugin.toast.error('Local LLM not initialized');
+                        return;
+                    }
+                    const result = yield llmRefineService.localLLMService.testConnection();
+                    if (result.success) {
+                        this.plugin.toast.success(`Connected to ${result.model}!`);
+                    }
+                    else {
+                        this.plugin.toast.error(`Connection failed: ${result.error}`);
+                    }
+                }
+                catch (error) {
+                    this.plugin.toast.error(`Test failed: ${error.message}`);
+                }
+                finally {
+                    button.setDisabled(false);
+                    button.setButtonText('Test Connection');
+                }
+            })));
+            // Setup Instructions for Ollama
+            if (this.plugin.settings.localLLMProvider === 'ollama') {
+                const instructionsEl = containerEl.createDiv('local-llm-instructions');
+                instructionsEl.createEl('p', {
+                    text: 'Ollama Setup:',
+                    cls: 'setting-item-description'
+                });
+                const ollamaList = instructionsEl.createEl('ol', { cls: 'setting-item-description' });
+                ollamaList.createEl('li', { text: 'Install Ollama: brew install ollama (macOS) or visit ollama.com' });
+                ollamaList.createEl('li', { text: 'Pull a model: ollama pull llama3.2 (or gpt-oss:20b, mistral, etc.)' });
+                ollamaList.createEl('li', { text: 'Verify running: ollama list (shows installed models)' });
+                ollamaList.createEl('li', { text: 'Enter model name above and click "Test Connection"' });
+                const noteEl = instructionsEl.createEl('p', { cls: 'setting-item-description' });
+                noteEl.innerHTML = '<strong>Recommended models:</strong><br/>• llama3.2 (3B) - Fast, good quality<br/>• mistral (7B) - Balanced<br/>• gpt-oss:20b - Large, high quality<br/>• qwen2.5:14b - Excellent for notes';
+            }
+            // Fallback Option
+            new obsidian.Setting(containerEl)
+                .setName('Fallback to OpenAI')
+                .setDesc('If enabled and local LLM fails, automatically fallback to OpenAI (requires API key)')
+                .addToggle((toggle) => toggle
+                .setValue(true) // Always enabled for now
+                .setDisabled(true)
+                .onChange((value) => __awaiter(this, void 0, void 0, function* () {
+                // Reserved for future use
+            })));
         }
     }
     applyMCPSetting(value) {

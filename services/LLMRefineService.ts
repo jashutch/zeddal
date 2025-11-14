@@ -3,70 +3,97 @@
 // Change Date: 2029-01-01 → Apache 2.0 License
 
 /**
- * LLMRefineService: GPT-4 refinement with RAG context
- * Architecture: Refine transcription using vault context and user style
- * Status: Phase 2 - Implemented
+ * LLMRefineService: Unified LLM refinement with RAG context
+ * Architecture: Support for both OpenAI GPT-4 and local LLMs (Ollama, llama.cpp, etc.)
+ * Status: Phase 2 - Implemented with local LLM support
  */
 
 import { Config } from '../utils/Config';
 import { RefinedNote } from '../utils/Types';
 import { eventBus } from '../utils/EventBus';
 import { CitationHelper } from '../utils/CitationHelper';
+import { LocalLLMService, LocalLLMProvider } from './LocalLLMService';
 
 export class LLMRefineService {
   private config: Config;
+  private localLLMService: LocalLLMService | null = null;
 
   constructor(config: Config) {
     this.config = config;
+    this.initializeLocalLLM();
   }
 
   /**
-   * Refine transcription with GPT-4 and optional context
+   * Initialize local LLM service if enabled
+   */
+  private initializeLocalLLM(): void {
+    if (this.config.get('enableLocalLLM')) {
+      const provider: LocalLLMProvider = {
+        type: this.config.get('localLLMProvider') as any,
+        baseUrl: this.config.get('localLLMBaseUrl'),
+        model: this.config.get('localLLMModel'),
+        apiKey: this.config.get('localLLMApiKey') || undefined,
+      };
+
+      this.localLLMService = new LocalLLMService(provider);
+      console.log('[LLMRefineService] Local LLM enabled:', provider.type, provider.model);
+    } else {
+      this.localLLMService = null;
+    }
+  }
+
+  /**
+   * Update LLM backend when settings change
+   */
+  updateBackend(): void {
+    this.initializeLocalLLM();
+    const backend = this.getBackendName();
+    console.log(`[LLMRefineService] Backend updated: ${backend}`);
+  }
+
+  /**
+   * Get current backend name for debugging
+   */
+  getBackendName(): string {
+    if (this.config.get('enableLocalLLM') && this.localLLMService) {
+      const provider = this.localLLMService.getProvider();
+      return `${provider.type} (${provider.model})`;
+    }
+    return 'OpenAI GPT-4';
+  }
+
+  /**
+   * Refine transcription with LLM (local or OpenAI) and optional context
    */
   async refine(
     text: string,
     context: string[] = [],
     userPrompt?: string
   ): Promise<RefinedNote> {
-    const apiKey = this.config.get('openaiApiKey');
-    if (!apiKey) {
-      throw new Error('OpenAI API key not configured');
-    }
-
     try {
-      // Build system prompt
-      const systemPrompt = this.buildSystemPrompt(context);
+      let refinedText: string;
 
-      // Build user message
-      const userMessage = userPrompt
-        ? `${userPrompt}\n\nTranscription to refine:\n${text}`
-        : `Please refine the following voice transcription into a well-structured note:\n\n${text}`;
+      // Try local LLM first if enabled
+      if (this.config.get('enableLocalLLM') && this.localLLMService) {
+        console.log('[LLMRefineService] Using local LLM for refinement');
+        try {
+          refinedText = await this.refineWithLocalLLM(text, context, userPrompt);
+        } catch (error) {
+          console.warn('[LLMRefineService] Local LLM failed, falling back to OpenAI:', error);
 
-      // Call GPT-4 API directly (fetch instead of SDK for consistency)
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: this.config.get('gptModel'),
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userMessage },
-          ],
-          temperature: 0.7,
-          max_tokens: 2000,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(`GPT-4 API error: ${response.status} - ${JSON.stringify(errorData)}`);
+          // Fallback to OpenAI
+          const apiKey = this.config.get('openaiApiKey');
+          if (apiKey) {
+            refinedText = await this.refineWithOpenAI(text, context, userPrompt);
+          } else {
+            throw new Error('Local LLM failed and no OpenAI API key configured for fallback');
+          }
+        }
+      } else {
+        // Use OpenAI by default
+        console.log('[LLMRefineService] Using OpenAI for refinement');
+        refinedText = await this.refineWithOpenAI(text, context, userPrompt);
       }
-
-      const data = await response.json();
-      const refinedText = data.choices?.[0]?.message?.content?.trim() || text;
 
       // Generate title
       const title = await this.generateTitle(refinedText);
@@ -93,6 +120,88 @@ export class LLMRefineService {
       });
       throw error;
     }
+  }
+
+  /**
+   * Refine using local LLM
+   */
+  private async refineWithLocalLLM(
+    text: string,
+    context: string[] = [],
+    userPrompt?: string
+  ): Promise<string> {
+    if (!this.localLLMService) {
+      throw new Error('Local LLM service not initialized');
+    }
+
+    // Build combined prompt for local LLM
+    const systemPrompt = this.buildSystemPrompt(context);
+    const userMessage = userPrompt
+      ? `${userPrompt}\n\nTranscription to refine:\n${text}`
+      : `Please refine the following voice transcription into a well-structured note:\n\n${text}`;
+
+    const fullPrompt = `${systemPrompt}\n\n${userMessage}`;
+
+    // Use LocalLLMService with instruction-based refinement
+    const result = await this.localLLMService.refineWithInstruction({
+      type: 'voice',
+      content: fullPrompt,
+      originalText: text,
+    });
+
+    if (!result.success) {
+      throw new Error(result.error || 'Local LLM refinement failed');
+    }
+
+    return result.refinedText;
+  }
+
+  /**
+   * Refine using OpenAI GPT-4
+   */
+  private async refineWithOpenAI(
+    text: string,
+    context: string[] = [],
+    userPrompt?: string
+  ): Promise<string> {
+    const apiKey = this.config.get('openaiApiKey');
+    if (!apiKey) {
+      throw new Error('OpenAI API key not configured');
+    }
+
+    // Build system prompt
+    const systemPrompt = this.buildSystemPrompt(context);
+
+    // Build user message
+    const userMessage = userPrompt
+      ? `${userPrompt}\n\nTranscription to refine:\n${text}`
+      : `Please refine the following voice transcription into a well-structured note:\n\n${text}`;
+
+    // Call GPT-4 API directly
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: this.config.get('gptModel'),
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMessage },
+        ],
+        temperature: 0.7,
+        max_tokens: 2000,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(`GPT-4 API error: ${response.status} - ${JSON.stringify(errorData)}`);
+    }
+
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content?.trim() || text;
   }
 
   /**
@@ -211,9 +320,17 @@ export class LLMRefineService {
   }
 
   /**
-   * Check if service is ready
+   * Check if service is ready (either local LLM or OpenAI)
    */
   isReady(): boolean {
+    // If local LLM is enabled, check if it's configured
+    if (this.config.get('enableLocalLLM')) {
+      const baseUrl = this.config.get('localLLMBaseUrl');
+      const model = this.config.get('localLLMModel');
+      return baseUrl !== '' && model !== '';
+    }
+
+    // Otherwise check OpenAI API key
     const apiKey = this.config.get('openaiApiKey');
     return apiKey !== null && apiKey !== undefined && apiKey.length > 0;
   }
