@@ -1503,6 +1503,20 @@ class ZeddalSettingTab extends PluginSettingTab {
             })
         );
 
+      new Setting(containerEl)
+        .setName('FFmpeg Path')
+        .setDesc('Path to ffmpeg executable for WebM → WAV conversion (e.g., /opt/homebrew/bin/ffmpeg)')
+        .addText((text) =>
+          text
+            .setPlaceholder('ffmpeg')
+            .setValue(this.plugin.settings.ffmpegPath || 'ffmpeg')
+            .onChange(async (value) => {
+              this.plugin.settings.ffmpegPath = value || 'ffmpeg';
+              await this.plugin.saveSettings();
+              this.plugin.whisperService.updateBackend();
+            })
+        );
+
       // Language Override
       new Setting(containerEl)
         .setName('Whisper Language')

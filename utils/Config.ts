@@ -75,6 +75,7 @@ export const DEFAULT_SETTINGS: ZeddalSettings = {
   whisperCppPath: '/usr/local/bin/whisper', // Default whisper.cpp binary path
   whisperModelPath: '', // User must configure model path
   whisperLanguage: 'auto', // Auto-detect language
+  ffmpegPath: 'ffmpeg', // Use ffmpeg from PATH by default
 };
 
 export class Config {

@@ -124,6 +124,7 @@ export interface ZeddalSettings {
   whisperCppPath: string; // Path to whisper.cpp binary
   whisperModelPath: string; // Path to whisper model file (e.g., ggml-base.en.bin)
   whisperLanguage: string; // Language code (e.g., 'en', 'es', 'auto')
+  ffmpegPath: string; // Path to ffmpeg binary for audio conversion
 }
 
 export interface AudioChunk {

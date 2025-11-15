@@ -129,6 +129,7 @@ const DEFAULT_SETTINGS = {
     whisperCppPath: '/usr/local/bin/whisper', // Default whisper.cpp binary path
     whisperModelPath: '', // User must configure model path
     whisperLanguage: 'auto', // Auto-detect language
+    ffmpegPath: 'ffmpeg', // Use ffmpeg from PATH by default
 };
 class Config {
     constructor(settings) {
@@ -716,15 +717,28 @@ class LocalWhisperBackend {
      */
     saveTempAudio(audioChunk) {
         return __awaiter(this, void 0, void 0, function* () {
-            const filename = `audio-${Date.now()}.wav`;
-            const filepath = path__namespace.join(this.tempDir, filename);
+            const extension = this.getExtensionFromMime(audioChunk.blob.type);
+            const baseName = `audio-${Date.now()}`;
+            const sourcePath = path__namespace.join(this.tempDir, `${baseName}.${extension}`);
             // Convert blob to buffer
             const arrayBuffer = yield audioChunk.blob.arrayBuffer();
             const buffer = Buffer.from(arrayBuffer);
             // Write to file
-            fs__namespace.writeFileSync(filepath, buffer);
-            console.log(`[Local Whisper] Saved temp audio: ${filepath} (${buffer.length} bytes)`);
-            return filepath;
+            fs__namespace.writeFileSync(sourcePath, buffer);
+            console.log(`[Local Whisper] Saved temp audio: ${sourcePath} (${buffer.length} bytes)`);
+            if (extension === 'wav') {
+                return sourcePath;
+            }
+            const wavPath = path__namespace.join(this.tempDir, `${baseName}.wav`);
+            try {
+                yield this.convertToWav(sourcePath, wavPath);
+                console.log(`[Local Whisper] Converted audio to WAV: ${wavPath}`);
+                return wavPath;
+            }
+            finally {
+                // Remove the source file regardless of conversion success to avoid leaks
+                this.cleanupTempFile(sourcePath);
+            }
         });
     }
     /**
@@ -839,6 +853,38 @@ class LocalWhisperBackend {
                 console.warn('[Local Whisper] Failed to cleanup temp directory:', error);
             }
         });
+    }
+    /**
+     * Convert arbitrary audio (webm/ogg/mp3) to WAV using ffmpeg
+     */
+    convertToWav(sourcePath, targetPath) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const ffmpegPath = this.config.get('ffmpegPath') || 'ffmpeg';
+            const command = `"${ffmpegPath}" -y -i "${sourcePath}" -ar 16000 -ac 1 -c:a pcm_s16le "${targetPath}"`;
+            try {
+                const { stderr } = yield execAsync(command, { timeout: 60000 });
+                if (stderr) {
+                    console.warn(`[Local Whisper] ffmpeg stderr: ${stderr}`);
+                }
+            }
+            catch (error) {
+                throw new Error(`Failed to convert audio via ffmpeg. Ensure ffmpeg is installed and configured. ${error.message || error}`);
+            }
+        });
+    }
+    getExtensionFromMime(mime) {
+        if (!mime) {
+            return 'webm';
+        }
+        if (mime.includes('wav'))
+            return 'wav';
+        if (mime.includes('ogg'))
+            return 'ogg';
+        if (mime.includes('mp3'))
+            return 'mp3';
+        if (mime.includes('m4a'))
+            return 'm4a';
+        return 'webm';
     }
 }
 
@@ -29754,6 +29800,17 @@ class ZeddalSettingTab extends obsidian.PluginSettingTab {
                 .setValue(this.plugin.settings.whisperModelPath || '')
                 .onChange((value) => __awaiter(this, void 0, void 0, function* () {
                 this.plugin.settings.whisperModelPath = value;
+                yield this.plugin.saveSettings();
+                this.plugin.whisperService.updateBackend();
+            })));
+            new obsidian.Setting(containerEl)
+                .setName('FFmpeg Path')
+                .setDesc('Path to ffmpeg executable for WebM → WAV conversion (e.g., /opt/homebrew/bin/ffmpeg)')
+                .addText((text) => text
+                .setPlaceholder('ffmpeg')
+                .setValue(this.plugin.settings.ffmpegPath || 'ffmpeg')
+                .onChange((value) => __awaiter(this, void 0, void 0, function* () {
+                this.plugin.settings.ffmpegPath = value || 'ffmpeg';
                 yield this.plugin.saveSettings();
                 this.plugin.whisperService.updateBackend();
             })));

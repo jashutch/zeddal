@@ -98,19 +98,33 @@ export class LocalWhisperBackend implements IWhisperBackend {
    * Save audio blob to temporary file
    */
   private async saveTempAudio(audioChunk: AudioChunk): Promise<string> {
-    const filename = `audio-${Date.now()}.wav`;
-    const filepath = path.join(this.tempDir, filename);
+    const extension = this.getExtensionFromMime(audioChunk.blob.type);
+    const baseName = `audio-${Date.now()}`;
+    const sourcePath = path.join(this.tempDir, `${baseName}.${extension}`);
 
     // Convert blob to buffer
     const arrayBuffer = await audioChunk.blob.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
     // Write to file
-    fs.writeFileSync(filepath, buffer);
+    fs.writeFileSync(sourcePath, buffer);
 
-    console.log(`[Local Whisper] Saved temp audio: ${filepath} (${buffer.length} bytes)`);
+    console.log(`[Local Whisper] Saved temp audio: ${sourcePath} (${buffer.length} bytes)`);
 
-    return filepath;
+    if (extension === 'wav') {
+      return sourcePath;
+    }
+
+    const wavPath = path.join(this.tempDir, `${baseName}.wav`);
+
+    try {
+      await this.convertToWav(sourcePath, wavPath);
+      console.log(`[Local Whisper] Converted audio to WAV: ${wavPath}`);
+      return wavPath;
+    } finally {
+      // Remove the source file regardless of conversion success to avoid leaks
+      this.cleanupTempFile(sourcePath);
+    }
   }
 
   /**
@@ -234,5 +248,37 @@ export class LocalWhisperBackend implements IWhisperBackend {
     } catch (error) {
       console.warn('[Local Whisper] Failed to cleanup temp directory:', error);
     }
+  }
+
+  /**
+   * Convert arbitrary audio (webm/ogg/mp3) to WAV using ffmpeg
+   */
+  private async convertToWav(sourcePath: string, targetPath: string): Promise<void> {
+    const ffmpegPath = this.config.get('ffmpegPath') || 'ffmpeg';
+    const command = `"${ffmpegPath}" -y -i "${sourcePath}" -ar 16000 -ac 1 -c:a pcm_s16le "${targetPath}"`;
+
+    try {
+      const { stderr } = await execAsync(command, { timeout: 60000 });
+      if (stderr) {
+        console.warn(`[Local Whisper] ffmpeg stderr: ${stderr}`);
+      }
+    } catch (error: any) {
+      throw new Error(
+        `Failed to convert audio via ffmpeg. Ensure ffmpeg is installed and configured. ${error.message || error}`
+      );
+    }
+  }
+
+  private getExtensionFromMime(mime: string | undefined): string {
+    if (!mime) {
+      return 'webm';
+    }
+
+    if (mime.includes('wav')) return 'wav';
+    if (mime.includes('ogg')) return 'ogg';
+    if (mime.includes('mp3')) return 'mp3';
+    if (mime.includes('m4a')) return 'm4a';
+
+    return 'webm';
   }
 }

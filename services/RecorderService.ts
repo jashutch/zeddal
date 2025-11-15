@@ -81,7 +81,8 @@ export class RecorderService {
       this.chunks = [];
 
       this.mediaRecorder.ondataavailable = (event) => {
-        console.log('Data available:', event.data.size, 'bytes');
+        // Debug logging disabled to prevent console spam
+        // console.log('Data available:', event.data.size, 'bytes');
         if (event.data.size > 0) {
           this.chunks.push(event.data);
         }
@@ -202,10 +203,11 @@ export class RecorderService {
       }
       const rms = Math.sqrt(sum / bufferLength);
 
-      // Log RMS every second for debugging
-      if (Date.now() % 1000 < 50) {
-        console.log('RMS level:', rms.toFixed(4), 'Confidence:', (rms * 10).toFixed(2));
-      }
+      // Debug logging disabled to prevent console spam
+      // Uncomment for debugging audio quality issues:
+      // if (Date.now() % 1000 < 50) {
+      //   console.log('RMS level:', rms.toFixed(4), 'Confidence:', (rms * 10).toFixed(2));
+      // }
 
       // Update confidence based on RMS (normalize to 0-1 range)
       this.state.confidence = Math.min(1.0, rms * 10);
