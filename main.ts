@@ -9,6 +9,8 @@
  */
 
 import { Plugin, PluginSettingTab, Setting, App, TFile } from 'obsidian';
+import * as fs from 'fs';
+import * as path from 'path';
 import { Config, DEFAULT_SETTINGS } from './utils/Config';
 import { ZeddalSettings } from './utils/Types';
 import { RecorderService } from './services/RecorderService';
@@ -70,7 +72,11 @@ export default class ZeddalPlugin extends Plugin {
     this.audioFileService = new AudioFileService(this.app, this.config);
     this.vaultOps = new VaultOps(this.app);
     this.toast = new Toast();
-    this.contextLinkService = new ContextLinkService(this.app);
+    this.contextLinkService = new ContextLinkService(
+      this.app,
+      this.vaultRAGService,
+      this.config
+    );
     this.qaSessionService = new QASessionService(this.config, this.vaultRAGService);
     this.transcriptFormatter = new TranscriptFormatter(this.config);
     this.statusBar = new StatusBar(this.app, () => this.handleStatusBarRecordRequest());
@@ -1517,6 +1523,72 @@ class ZeddalSettingTab extends PluginSettingTab {
             })
         );
 
+      new Setting(containerEl)
+        .setName('Normalize audio before transcription')
+        .setDesc('Apply loudness normalization and high-pass filtering via ffmpeg')
+        .addToggle((toggle) =>
+          toggle
+            .setValue(this.plugin.settings.enableAudioFilters)
+            .onChange(async (value) => {
+              this.plugin.settings.enableAudioFilters = value;
+              await this.plugin.saveSettings();
+            })
+        );
+
+      new Setting(containerEl)
+        .setName('Whisper models directory')
+        .setDesc('Optional folder to scan for GGML/GGUF models for quick switching')
+        .addText((text) =>
+          text
+            .setPlaceholder('/Users/you/whisper-models')
+            .setValue(
+              this.plugin.settings.whisperModelsDir ||
+                this.deriveDefaultWhisperModelsDir()
+            )
+            .onChange(async (value) => {
+              this.plugin.settings.whisperModelsDir = value.trim();
+              await this.plugin.saveSettings();
+              this.display();
+            })
+        );
+
+      const modelOptions = this.getWhisperModelOptions();
+      const currentModelPath = this.plugin.settings.whisperModelPath || '';
+      if (currentModelPath && !modelOptions.some((o) => o.value === currentModelPath)) {
+        modelOptions.push({
+          value: currentModelPath,
+          label: `${this.getModelLabel(currentModelPath)} (current)`,
+        });
+      }
+
+      new Setting(containerEl)
+        .setName('Available Whisper Models')
+        .setDesc(
+          modelOptions.length
+            ? 'Select a model detected in the configured directory'
+            : 'No models found in the directory above'
+        )
+        .addDropdown((dropdown) => {
+          if (!modelOptions.length) {
+            dropdown.addOption('', 'No models detected');
+            dropdown.setDisabled(true);
+            return;
+          }
+
+          modelOptions.forEach((option) => {
+            dropdown.addOption(option.value, option.label);
+          });
+
+          dropdown
+            .setValue(currentModelPath || modelOptions[0].value)
+            .onChange(async (value) => {
+              if (!value) return;
+              this.plugin.settings.whisperModelPath = value;
+              await this.plugin.saveSettings();
+              this.plugin.whisperService.updateBackend();
+            });
+        });
+
       // Language Override
       new Setting(containerEl)
         .setName('Whisper Language')
@@ -1739,5 +1811,48 @@ class ZeddalSettingTab extends PluginSettingTab {
       await this.plugin.mcpClientService.disconnect();
       this.plugin.toast.info('MCP disabled');
     }
+  }
+
+  private deriveDefaultWhisperModelsDir(): string {
+    if (this.plugin.settings.whisperModelsDir?.trim()) {
+      return this.plugin.settings.whisperModelsDir.trim();
+    }
+    const currentPath = this.plugin.settings.whisperModelPath;
+    if (currentPath) {
+      return path.dirname(currentPath);
+    }
+    return '';
+  }
+
+  private getWhisperModelOptions(): Array<{ label: string; value: string }> {
+    const dir = this.deriveDefaultWhisperModelsDir();
+    if (!dir) {
+      return [];
+    }
+
+    try {
+      if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
+        return [];
+      }
+
+      const entries = fs.readdirSync(dir);
+      return entries
+        .filter((entry) => this.isWhisperModelFile(entry))
+        .map((entry) => ({
+          label: entry,
+          value: path.join(dir, entry),
+        }));
+    } catch (error) {
+      console.warn('[Zeddal] Unable to scan whisper models directory:', error);
+      return [];
+    }
+  }
+
+  private isWhisperModelFile(filename: string): boolean {
+    return /\.(bin|gguf|ggml)$/i.test(filename);
+  }
+
+  private getModelLabel(fullPath: string): string {
+    return path.basename(fullPath || '');
   }
 }

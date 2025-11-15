@@ -1,10 +1,10 @@
 'use strict';
 
 var obsidian = require('obsidian');
+var fs$1 = require('fs');
+var path$3 = require('path');
 var require$$0 = require('child_process');
 var util$2 = require('util');
-var path$3 = require('path');
-var fs$1 = require('fs');
 var process$1 = require('node:process');
 var node_stream = require('node:stream');
 
@@ -25,8 +25,8 @@ function _interopNamespaceDefault(e) {
     return Object.freeze(n);
 }
 
-var path__namespace = /*#__PURE__*/_interopNamespaceDefault(path$3);
 var fs__namespace = /*#__PURE__*/_interopNamespaceDefault(fs$1);
+var path__namespace = /*#__PURE__*/_interopNamespaceDefault(path$3);
 
 /******************************************************************************
 Copyright (c) Microsoft Corporation.
@@ -82,6 +82,7 @@ const DEFAULT_SETTINGS = {
     autoRefine: true, // Auto-refine with GPT-4
     autoSaveRaw: true,
     autoContextLinks: true,
+    enableAudioFilters: true,
     // Audio recording settings
     recordingsPath: 'Voice Notes/Recordings', // Default path for audio files
     // RAG settings
@@ -128,6 +129,7 @@ const DEFAULT_SETTINGS = {
     whisperBackend: 'openai', // Default to OpenAI API
     whisperCppPath: '/usr/local/bin/whisper', // Default whisper.cpp binary path
     whisperModelPath: '', // User must configure model path
+    whisperModelsDir: '', // Optional directory scan
     whisperLanguage: 'auto', // Auto-detect language
     ffmpegPath: 'ffmpeg', // Use ffmpeg from PATH by default
 };
@@ -860,7 +862,9 @@ class LocalWhisperBackend {
     convertToWav(sourcePath, targetPath) {
         return __awaiter(this, void 0, void 0, function* () {
             const ffmpegPath = this.config.get('ffmpegPath') || 'ffmpeg';
-            const command = `"${ffmpegPath}" -y -i "${sourcePath}" -ar 16000 -ac 1 -c:a pcm_s16le "${targetPath}"`;
+            const applyFilters = this.config.get('enableAudioFilters');
+            const filterArgs = applyFilters ? ' -af loudnorm,highpass=f=80' : '';
+            const command = `"${ffmpegPath}" -y -i "${sourcePath}"${filterArgs} -ar 16000 -ac 1 -c:a pcm_s16le "${targetPath}"`;
             try {
                 const { stderr } = yield execAsync(command, { timeout: 60000 });
                 if (stderr) {
@@ -8454,6 +8458,35 @@ OpenAI.ContainerListResponsesPage = ContainerListResponsesPage;
 // Copyright © 2025 Jason Hutchcraft
 // Licensed under the Business Source License 1.1 (see LICENSE for details)
 // Change Date: 2029-01-01 → Apache 2.0 License
+/**
+ * Common error helpers for network/offline detection.
+ */
+class OfflineError extends Error {
+    constructor(message = 'Network connection unavailable') {
+        super(message);
+        this.name = 'OfflineError';
+    }
+}
+function isNetworkError(error) {
+    var _a;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        return true;
+    }
+    const message = typeof error === 'string'
+        ? error
+        : (error === null || error === void 0 ? void 0 : error.message) || ((_a = error === null || error === void 0 ? void 0 : error.toString) === null || _a === void 0 ? void 0 : _a.call(error)) || '';
+    if (typeof message !== 'string') {
+        return false;
+    }
+    return (message.includes('Failed to fetch') ||
+        message.includes('ERR_INTERNET_DISCONNECTED') ||
+        message.includes('Network request failed') ||
+        message.includes('Connection error'));
+}
+
+// Copyright © 2025 Jason Hutchcraft
+// Licensed under the Business Source License 1.1 (see LICENSE for details)
+// Change Date: 2029-01-01 → Apache 2.0 License
 class OpenAIEmbeddingProvider {
     constructor(config) {
         this.config = config;
@@ -8482,8 +8515,12 @@ class OpenAIEmbeddingProvider {
                 };
             }
             catch (error) {
+                if (isNetworkError(error)) {
+                    console.warn('OpenAI embedding skipped: offline detected');
+                    throw new OfflineError('Offline: skipped embedding generation');
+                }
                 console.error('OpenAI embedding error:', error);
-                throw new Error(`Failed to generate embedding: ${error.message}`);
+                throw new Error(`Failed to generate embedding: ${(error === null || error === void 0 ? void 0 : error.message) || error}`);
             }
         });
     }
@@ -8502,8 +8539,12 @@ class OpenAIEmbeddingProvider {
                 }));
             }
             catch (error) {
+                if (isNetworkError(error)) {
+                    console.warn('OpenAI batch embedding skipped: offline detected');
+                    throw new OfflineError('Offline: skipped batch embedding generation');
+                }
                 console.error('OpenAI batch embedding error:', error);
-                throw new Error(`Failed to generate batch embeddings: ${error.message}`);
+                throw new Error(`Failed to generate batch embeddings: ${(error === null || error === void 0 ? void 0 : error.message) || error}`);
             }
         });
     }
@@ -8643,6 +8684,17 @@ class VaultRAGService {
         const pluginDir = this.app.vault.configDir + '/plugins/zeddal';
         this.cacheFilePath = `${pluginDir}/embeddings-cache.json`;
     }
+    ensureIndexReady() {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (!this.config.get('enableRAG')) {
+                return false;
+            }
+            if (!this.isIndexBuilt) {
+                yield this.buildIndex();
+            }
+            return this.index.length > 0;
+        });
+    }
     /**
      * Build vector index from vault files
      * Loads from cache if available, otherwise indexes from scratch
@@ -8718,6 +8770,10 @@ class VaultRAGService {
                 this.index.push(...chunks);
             }
             catch (error) {
+                if (error instanceof OfflineError) {
+                    console.warn('Vault RAG: offline detected while building embeddings. Skipping batch.');
+                    return;
+                }
                 console.error('Failed to generate embeddings for batch:', error);
                 throw error;
             }
@@ -8782,9 +8838,65 @@ class VaultRAGService {
                 return contextChunks;
             }
             catch (error) {
+                if (error instanceof OfflineError) {
+                    console.warn('RAG context retrieval skipped (offline detected)');
+                    return [];
+                }
                 console.error('RAG context retrieval failed:', error);
                 return []; // Gracefully degrade to no context
             }
+        });
+    }
+    findSimilarNotesBatch(texts, options) {
+        return __awaiter(this, void 0, void 0, function* () {
+            var _a;
+            const defaults = texts.map(() => []);
+            if (!texts.length || !(yield this.ensureIndexReady())) {
+                return defaults;
+            }
+            const sanitized = texts.map((text) => { var _a; return (_a = text === null || text === void 0 ? void 0 : text.trim()) !== null && _a !== void 0 ? _a : ''; });
+            if (sanitized.every((text) => text.length === 0)) {
+                return defaults;
+            }
+            try {
+                const embeddings = yield this.embeddingProvider.embedBatch(sanitized);
+                const topK = (_a = options === null || options === void 0 ? void 0 : options.topK) !== null && _a !== void 0 ? _a : Math.min(5, this.index.length);
+                const candidates = this.index.map((chunk) => ({
+                    embedding: chunk.embedding,
+                    metadata: chunk,
+                }));
+                const results = [];
+                for (let i = 0; i < embeddings.length; i++) {
+                    const query = embeddings[i];
+                    const sourceText = sanitized[i];
+                    if (!sourceText) {
+                        results.push([]);
+                        continue;
+                    }
+                    const matches = VectorMath.topKSimilar(query, candidates, topK).map((entry) => ({
+                        notePath: entry.metadata.path,
+                        noteTitle: this.extractTitle(entry.metadata.path),
+                        similarity: entry.similarity,
+                        chunkText: entry.metadata.text,
+                    }));
+                    results.push(matches);
+                }
+                return results;
+            }
+            catch (error) {
+                if (error instanceof OfflineError) {
+                    console.warn('Semantic linking skipped (offline detected)');
+                    return defaults;
+                }
+                console.error('Failed to retrieve semantic matches:', error);
+                return defaults;
+            }
+        });
+    }
+    findSimilarNotes(text, options) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const [result] = yield this.findSimilarNotesBatch([text], options);
+            return result !== null && result !== void 0 ? result : [];
         });
     }
     /**
@@ -8983,6 +9095,10 @@ class VaultRAGService {
             isBuilt: this.isIndexBuilt,
             provider: this.embeddingProvider.getModelName(),
         };
+    }
+    extractTitle(path) {
+        const filename = path.split('/').pop() || path;
+        return filename.replace(/\.md$/i, '');
     }
 }
 
@@ -26551,11 +26667,16 @@ class OnboardingModal extends obsidian.Modal {
 // Licensed under the Business Source License 1.1 (see LICENSE for details)
 // Change Date: 2029-01-01 → Apache 2.0 License
 class ContextLinkService {
-    constructor(app) {
+    constructor(app, vaultRAGService, config) {
         this.app = app;
+        this.vaultRAGService = vaultRAGService;
+        this.config = config;
         this.index = [];
         this.isDirty = true;
         this.lastBuilt = 0;
+        this.semanticThreshold = 0.78;
+        this.maxLinksPerSentence = 3;
+        this.maxSemanticCandidates = 4;
     }
     markDirty() {
         this.isDirty = true;
@@ -26583,25 +26704,15 @@ class ContextLinkService {
                 return { text, matches: 0 };
             }
             yield this.ensureIndex();
-            if (!this.index.length) {
-                return { text, matches: 0 };
-            }
-            const sortByLength = [...this.index].sort((a, b) => b.title.length - a.title.length);
-            let output = text;
-            let matches = 0;
-            for (const entry of sortByLength) {
-                if (!entry.title || entry.title.length < 3)
-                    continue;
-                const pattern = this.buildRegex(entry.title);
-                output = output.replace(pattern, (match, captured) => {
-                    matches += 1;
-                    const aliasNeeded = captured.toLowerCase() !== entry.title.toLowerCase();
-                    return aliasNeeded
-                        ? `[[${entry.title}|${captured}]]`
-                        : `[[${entry.title}]]`;
-                });
-            }
-            return { text: output, matches };
+            let workingText = text;
+            let totalMatches = 0;
+            const semanticResult = yield this.applySemanticLinks(workingText);
+            workingText = semanticResult.text;
+            totalMatches += semanticResult.matches;
+            const exactResult = this.applyExactTitleLinks(workingText);
+            workingText = exactResult.text;
+            totalMatches += exactResult.matches;
+            return { text: workingText, matches: totalMatches };
         });
     }
     buildRegex(title) {
@@ -26610,6 +26721,164 @@ class ContextLinkService {
     }
     normalize(value) {
         return value.toLowerCase().replace(/[^a-z0-9]/g, '');
+    }
+    applyExactTitleLinks(text) {
+        if (!this.index.length) {
+            return { text, matches: 0 };
+        }
+        const sortByLength = [...this.index].sort((a, b) => b.title.length - a.title.length);
+        let output = text;
+        let matches = 0;
+        for (const entry of sortByLength) {
+            if (!entry.title || entry.title.length < 3)
+                continue;
+            const pattern = this.buildRegex(entry.title);
+            output = output.replace(pattern, (match, captured) => {
+                matches += 1;
+                const aliasNeeded = captured.toLowerCase() !== entry.title.toLowerCase();
+                return aliasNeeded
+                    ? `[[${entry.title}|${captured}]]`
+                    : `[[${entry.title}]]`;
+            });
+        }
+        return { text: output, matches };
+    }
+    applySemanticLinks(text) {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (!this.config.get('enableRAG') ||
+                !this.vaultRAGService ||
+                !this.config.get('autoContextLinks')) {
+                return { text, matches: 0 };
+            }
+            const sentences = this.extractSentences(text);
+            if (!sentences.length) {
+                return { text, matches: 0 };
+            }
+            let matches = [];
+            try {
+                matches = yield this.vaultRAGService.findSimilarNotesBatch(sentences.map((s) => s.text), { topK: this.maxSemanticCandidates });
+            }
+            catch (error) {
+                console.warn('Semantic linking failed:', error);
+                return { text, matches: 0 };
+            }
+            const replacements = [];
+            sentences.forEach((sentence, index) => {
+                const candidates = matches[index] || [];
+                if (!candidates.length) {
+                    return;
+                }
+                let linksAdded = 0;
+                for (const candidate of candidates) {
+                    if (candidate.similarity < this.semanticThreshold) {
+                        continue;
+                    }
+                    const span = this.findAnchorSpan(sentence.text, candidate);
+                    if (!span)
+                        continue;
+                    const start = sentence.start + span.start;
+                    const end = sentence.start + span.end;
+                    if (end <= start ||
+                        this.isInsideExistingLink(text, start) ||
+                        this.overlapsExisting(start, end, replacements)) {
+                        continue;
+                    }
+                    const alias = text.slice(start, end);
+                    if (!alias.trim()) {
+                        continue;
+                    }
+                    const needsAlias = alias.toLowerCase() !== candidate.noteTitle.toLowerCase();
+                    const replacement = needsAlias
+                        ? `[[${candidate.noteTitle}|${alias}]]`
+                        : `[[${candidate.noteTitle}]]`;
+                    replacements.push({ start, end, text: replacement });
+                    linksAdded += 1;
+                    if (linksAdded >= this.maxLinksPerSentence) {
+                        break;
+                    }
+                }
+            });
+            if (!replacements.length) {
+                return { text, matches: 0 };
+            }
+            const updated = this.applyReplacements(text, replacements);
+            return { text: updated, matches: replacements.length };
+        });
+    }
+    extractSentences(text) {
+        var _a;
+        const regex = /[^.!?\n]+[.!?]?/g;
+        const sentences = [];
+        let match;
+        while ((match = regex.exec(text)) !== null) {
+            const raw = match[0];
+            const trimmed = raw.trim();
+            if (!trimmed)
+                continue;
+            const leadingWhitespace = raw.indexOf(trimmed);
+            const matchIndex = (_a = match.index) !== null && _a !== void 0 ? _a : 0;
+            const start = matchIndex + (leadingWhitespace >= 0 ? leadingWhitespace : 0);
+            const end = start + trimmed.length;
+            sentences.push({ text: trimmed, start, end });
+        }
+        return sentences;
+    }
+    findAnchorSpan(sentence, candidate) {
+        const lowerSentence = sentence.toLowerCase();
+        const keywords = this.buildKeywordList(candidate);
+        for (const keyword of keywords) {
+            if (!keyword)
+                continue;
+            const idx = lowerSentence.indexOf(keyword);
+            if (idx !== -1) {
+                return { start: idx, end: idx + keyword.length };
+            }
+        }
+        // Fallback: link the full sentence
+        return { start: 0, end: sentence.length };
+    }
+    buildKeywordList(candidate) {
+        const keywords = new Set();
+        const pushTokens = (source, minLength) => {
+            if (!source)
+                return;
+            const tokens = source
+                .toLowerCase()
+                .match(/[a-z0-9]{2,}/g);
+            if (!tokens)
+                return;
+            tokens
+                .filter((token) => token.length >= minLength)
+                .forEach((token) => keywords.add(token));
+        };
+        if (candidate.noteTitle) {
+            keywords.add(candidate.noteTitle.toLowerCase());
+        }
+        pushTokens(candidate.noteTitle, 3);
+        pushTokens(candidate.chunkText, 5);
+        return Array.from(keywords).sort((a, b) => b.length - a.length);
+    }
+    isInsideExistingLink(text, index) {
+        const open = text.lastIndexOf('[[', index);
+        if (open === -1) {
+            return false;
+        }
+        const close = text.indexOf(']]', open);
+        return close !== -1 && close > index;
+    }
+    overlapsExisting(start, end, replacements) {
+        return replacements.some((replacement) => start < replacement.end && end > replacement.start);
+    }
+    applyReplacements(text, replacements) {
+        const sorted = [...replacements].sort((a, b) => b.start - a.start);
+        let output = text;
+        for (const replacement of sorted) {
+            output =
+                output.slice(0, replacement.start) +
+                    replacement.text +
+                    output.slice(replacement.end);
+        }
+        return output;
     }
 }
 
@@ -28665,7 +28934,7 @@ class ZeddalPlugin extends obsidian.Plugin {
             this.audioFileService = new AudioFileService(this.app, this.config);
             this.vaultOps = new VaultOps(this.app);
             this.toast = new Toast();
-            this.contextLinkService = new ContextLinkService(this.app);
+            this.contextLinkService = new ContextLinkService(this.app, this.vaultRAGService, this.config);
             this.qaSessionService = new QASessionService(this.config, this.vaultRAGService);
             this.transcriptFormatter = new TranscriptFormatter(this.config);
             this.statusBar = new StatusBar(this.app, () => this.handleStatusBarRecordRequest());
@@ -29814,6 +30083,59 @@ class ZeddalSettingTab extends obsidian.PluginSettingTab {
                 yield this.plugin.saveSettings();
                 this.plugin.whisperService.updateBackend();
             })));
+            new obsidian.Setting(containerEl)
+                .setName('Normalize audio before transcription')
+                .setDesc('Apply loudness normalization and high-pass filtering via ffmpeg')
+                .addToggle((toggle) => toggle
+                .setValue(this.plugin.settings.enableAudioFilters)
+                .onChange((value) => __awaiter(this, void 0, void 0, function* () {
+                this.plugin.settings.enableAudioFilters = value;
+                yield this.plugin.saveSettings();
+            })));
+            new obsidian.Setting(containerEl)
+                .setName('Whisper models directory')
+                .setDesc('Optional folder to scan for GGML/GGUF models for quick switching')
+                .addText((text) => text
+                .setPlaceholder('/Users/you/whisper-models')
+                .setValue(this.plugin.settings.whisperModelsDir ||
+                this.deriveDefaultWhisperModelsDir())
+                .onChange((value) => __awaiter(this, void 0, void 0, function* () {
+                this.plugin.settings.whisperModelsDir = value.trim();
+                yield this.plugin.saveSettings();
+                this.display();
+            })));
+            const modelOptions = this.getWhisperModelOptions();
+            const currentModelPath = this.plugin.settings.whisperModelPath || '';
+            if (currentModelPath && !modelOptions.some((o) => o.value === currentModelPath)) {
+                modelOptions.push({
+                    value: currentModelPath,
+                    label: `${this.getModelLabel(currentModelPath)} (current)`,
+                });
+            }
+            new obsidian.Setting(containerEl)
+                .setName('Available Whisper Models')
+                .setDesc(modelOptions.length
+                ? 'Select a model detected in the configured directory'
+                : 'No models found in the directory above')
+                .addDropdown((dropdown) => {
+                if (!modelOptions.length) {
+                    dropdown.addOption('', 'No models detected');
+                    dropdown.setDisabled(true);
+                    return;
+                }
+                modelOptions.forEach((option) => {
+                    dropdown.addOption(option.value, option.label);
+                });
+                dropdown
+                    .setValue(currentModelPath || modelOptions[0].value)
+                    .onChange((value) => __awaiter(this, void 0, void 0, function* () {
+                    if (!value)
+                        return;
+                    this.plugin.settings.whisperModelPath = value;
+                    yield this.plugin.saveSettings();
+                    this.plugin.whisperService.updateBackend();
+                }));
+            });
             // Language Override
             new obsidian.Setting(containerEl)
                 .setName('Whisper Language')
@@ -30004,6 +30326,45 @@ class ZeddalSettingTab extends obsidian.PluginSettingTab {
                 this.plugin.toast.info('MCP disabled');
             }
         });
+    }
+    deriveDefaultWhisperModelsDir() {
+        var _a;
+        if ((_a = this.plugin.settings.whisperModelsDir) === null || _a === void 0 ? void 0 : _a.trim()) {
+            return this.plugin.settings.whisperModelsDir.trim();
+        }
+        const currentPath = this.plugin.settings.whisperModelPath;
+        if (currentPath) {
+            return path__namespace.dirname(currentPath);
+        }
+        return '';
+    }
+    getWhisperModelOptions() {
+        const dir = this.deriveDefaultWhisperModelsDir();
+        if (!dir) {
+            return [];
+        }
+        try {
+            if (!fs__namespace.existsSync(dir) || !fs__namespace.statSync(dir).isDirectory()) {
+                return [];
+            }
+            const entries = fs__namespace.readdirSync(dir);
+            return entries
+                .filter((entry) => this.isWhisperModelFile(entry))
+                .map((entry) => ({
+                label: entry,
+                value: path__namespace.join(dir, entry),
+            }));
+        }
+        catch (error) {
+            console.warn('[Zeddal] Unable to scan whisper models directory:', error);
+            return [];
+        }
+    }
+    isWhisperModelFile(filename) {
+        return /\.(bin|gguf|ggml)$/i.test(filename);
+    }
+    getModelLabel(fullPath) {
+        return path__namespace.basename(fullPath || '');
     }
 }
 

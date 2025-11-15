@@ -10,6 +10,7 @@
 import { IEmbeddingProvider, EmbeddingVector } from '../../utils/Types';
 import { Config } from '../../utils/Config';
 import OpenAI from 'openai';
+import { OfflineError, isNetworkError } from '../../utils/Errors';
 
 export class OpenAIEmbeddingProvider implements IEmbeddingProvider {
   private client: OpenAI;
@@ -46,8 +47,12 @@ export class OpenAIEmbeddingProvider implements IEmbeddingProvider {
         dimensions: embedding.length,
       };
     } catch (error) {
+      if (isNetworkError(error)) {
+        console.warn('OpenAI embedding skipped: offline detected');
+        throw new OfflineError('Offline: skipped embedding generation');
+      }
       console.error('OpenAI embedding error:', error);
-      throw new Error(`Failed to generate embedding: ${error.message}`);
+      throw new Error(`Failed to generate embedding: ${error?.message || error}`);
     }
   }
 
@@ -65,8 +70,14 @@ export class OpenAIEmbeddingProvider implements IEmbeddingProvider {
         dimensions: item.embedding.length,
       }));
     } catch (error) {
+      if (isNetworkError(error)) {
+        console.warn('OpenAI batch embedding skipped: offline detected');
+        throw new OfflineError('Offline: skipped batch embedding generation');
+      }
       console.error('OpenAI batch embedding error:', error);
-      throw new Error(`Failed to generate batch embeddings: ${error.message}`);
+      throw new Error(
+        `Failed to generate batch embeddings: ${error?.message || error}`
+      );
     }
   }
 

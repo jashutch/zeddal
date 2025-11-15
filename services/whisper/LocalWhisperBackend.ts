@@ -255,7 +255,9 @@ export class LocalWhisperBackend implements IWhisperBackend {
    */
   private async convertToWav(sourcePath: string, targetPath: string): Promise<void> {
     const ffmpegPath = this.config.get('ffmpegPath') || 'ffmpeg';
-    const command = `"${ffmpegPath}" -y -i "${sourcePath}" -ar 16000 -ac 1 -c:a pcm_s16le "${targetPath}"`;
+    const applyFilters = this.config.get('enableAudioFilters');
+    const filterArgs = applyFilters ? ' -af loudnorm,highpass=f=80' : '';
+    const command = `"${ffmpegPath}" -y -i "${sourcePath}"${filterArgs} -ar 16000 -ac 1 -c:a pcm_s16le "${targetPath}"`;
 
     try {
       const { stderr } = await execAsync(command, { timeout: 60000 });

@@ -26,11 +26,19 @@ import {
 import { TextChunker } from '../utils/TextChunker';
 import { VectorMath } from '../utils/VectorMath';
 import { EmbeddingProviderFactory } from './embeddings/EmbeddingProviderFactory';
+import { OfflineError } from '../utils/Errors';
 
 interface VaultIndexCache {
   version: number;
   chunks: VaultChunk[];
   lastBuilt: number;
+}
+
+export interface SemanticNoteMatch {
+  notePath: string;
+  noteTitle: string;
+  similarity: number;
+  chunkText: string;
 }
 
 export class VaultRAGService {
@@ -51,6 +59,18 @@ export class VaultRAGService {
     // Cache file stored in plugin data directory
     const pluginDir = (this.app.vault as any).configDir + '/plugins/zeddal';
     this.cacheFilePath = `${pluginDir}/embeddings-cache.json`;
+  }
+
+  private async ensureIndexReady(): Promise<boolean> {
+    if (!this.config.get('enableRAG')) {
+      return false;
+    }
+
+    if (!this.isIndexBuilt) {
+      await this.buildIndex();
+    }
+
+    return this.index.length > 0;
   }
 
   /**
@@ -141,6 +161,12 @@ export class VaultRAGService {
       // Add to index
       this.index.push(...chunks);
     } catch (error) {
+      if (error instanceof OfflineError) {
+        console.warn(
+          'Vault RAG: offline detected while building embeddings. Skipping batch.'
+        );
+        return;
+      }
       console.error('Failed to generate embeddings for batch:', error);
       throw error;
     }
@@ -216,9 +242,78 @@ export class VaultRAGService {
 
       return contextChunks;
     } catch (error) {
+      if (error instanceof OfflineError) {
+        console.warn('RAG context retrieval skipped (offline detected)');
+        return [];
+      }
       console.error('RAG context retrieval failed:', error);
       return []; // Gracefully degrade to no context
     }
+  }
+
+  async findSimilarNotesBatch(
+    texts: string[],
+    options?: { topK?: number }
+  ): Promise<SemanticNoteMatch[][]> {
+    const defaults: SemanticNoteMatch[][] = texts.map(() => []);
+
+    if (!texts.length || !(await this.ensureIndexReady())) {
+      return defaults;
+    }
+
+    const sanitized = texts.map((text) => text?.trim() ?? '');
+    if (sanitized.every((text) => text.length === 0)) {
+      return defaults;
+    }
+
+    try {
+      const embeddings = await this.embeddingProvider.embedBatch(sanitized);
+      const topK = options?.topK ?? Math.min(5, this.index.length);
+      const candidates = this.index.map((chunk) => ({
+        embedding: chunk.embedding,
+        metadata: chunk,
+      }));
+
+      const results: SemanticNoteMatch[][] = [];
+
+      for (let i = 0; i < embeddings.length; i++) {
+        const query = embeddings[i];
+        const sourceText = sanitized[i];
+
+        if (!sourceText) {
+          results.push([]);
+          continue;
+        }
+
+        const matches = VectorMath.topKSimilar(query, candidates, topK).map(
+          (entry) => ({
+            notePath: entry.metadata.path,
+            noteTitle: this.extractTitle(entry.metadata.path),
+            similarity: entry.similarity,
+            chunkText: entry.metadata.text,
+          })
+        );
+
+        results.push(matches);
+      }
+
+      return results;
+    } catch (error) {
+      if (error instanceof OfflineError) {
+        console.warn('Semantic linking skipped (offline detected)');
+        return defaults;
+      }
+      console.error('Failed to retrieve semantic matches:', error);
+      return defaults;
+    }
+  }
+
+  async findSimilarNotes(
+    text: string,
+    options?: { topK?: number }
+  ): Promise<SemanticNoteMatch[]> {
+    const [result] = await this.findSimilarNotesBatch([text], options);
+    return result ?? [];
   }
 
   /**
@@ -438,5 +533,10 @@ export class VaultRAGService {
       isBuilt: this.isIndexBuilt,
       provider: this.embeddingProvider.getModelName(),
     };
+  }
+
+  private extractTitle(path: string): string {
+    const filename = path.split('/').pop() || path;
+    return filename.replace(/\.md$/i, '');
   }
 }

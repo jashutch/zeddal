@@ -28,6 +28,7 @@ export const DEFAULT_SETTINGS: ZeddalSettings = {
   autoRefine: true, // Auto-refine with GPT-4
   autoSaveRaw: true,
   autoContextLinks: true,
+  enableAudioFilters: true,
   // Audio recording settings
   recordingsPath: 'Voice Notes/Recordings', // Default path for audio files
   // RAG settings
@@ -74,6 +75,7 @@ export const DEFAULT_SETTINGS: ZeddalSettings = {
   whisperBackend: 'openai', // Default to OpenAI API
   whisperCppPath: '/usr/local/bin/whisper', // Default whisper.cpp binary path
   whisperModelPath: '', // User must configure model path
+  whisperModelsDir: '', // Optional directory scan
   whisperLanguage: 'auto', // Auto-detect language
   ffmpegPath: 'ffmpeg', // Use ffmpeg from PATH by default
 };

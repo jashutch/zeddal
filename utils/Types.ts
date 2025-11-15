@@ -77,6 +77,7 @@ export interface ZeddalSettings {
   autoRefine: boolean;
   autoSaveRaw: boolean;
   autoContextLinks: boolean;
+  enableAudioFilters: boolean;
   // Audio recording settings
   recordingsPath: string; // Path where raw audio files are saved
   // RAG settings
@@ -123,6 +124,7 @@ export interface ZeddalSettings {
   whisperBackend: 'openai' | 'local-cpp' | 'local-python' | 'wasm'; // Transcription backend
   whisperCppPath: string; // Path to whisper.cpp binary
   whisperModelPath: string; // Path to whisper model file (e.g., ggml-base.en.bin)
+  whisperModelsDir: string; // Directory containing whisper models
   whisperLanguage: string; // Language code (e.g., 'en', 'es', 'auto')
   ffmpegPath: string; // Path to ffmpeg binary for audio conversion
 }
